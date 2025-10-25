@@ -1,10 +1,11 @@
 streamlit
 pandas
 requests
-tqdm
 nltk
 Sastrawi
-openpyxl
 scikit-learn
 matplotlib
 seaborn
+wordcloud
+tqdm
+openpyxl
