@@ -1,1 +1,7 @@
 streamlit
+pandas
+requests
+tqdm
+nltk
+Sastrawi
+openpyxl
