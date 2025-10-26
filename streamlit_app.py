@@ -633,4 +633,14 @@ with tab2:
             st.subheader("Hasil Analisis Teks:")
             if hasil_sentimen:
                 st.write("Teks setelah Cleaning & Case Folding:")
-                st.info(f"`{te
+                st.info(f"`{teks_diproses}`")
+                st.write("Hasil Sentimen (Lexicon):")
+                if hasil_sentimen == 'positif': st.success(f"**{hasil_sentimen.upper()}** 😊")
+                elif hasil_sentimen == 'negatif': st.error(f"**{hasil_sentimen.upper()}** 😠")
+                else: st.warning(f"**{hasil_sentimen.upper()}** 😐")
+            else: st.error(f"Gagal: {teks_diproses}")
+        else: st.warning("☝️ Masukkan teks terlebih dahulu.")
+
+# --- Footer ---
+st.markdown("---")
+st.markdown("Dibuat dengan Streamlit")
