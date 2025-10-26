@@ -24,8 +24,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.pipeline import Pipeline
 import matplotlib.pyplot as plt
 import seaborn as sns
-import nltk
-from nltk.tokenize import word_tokenize # <-- Pastikan baris ini ada dan benar
+
 # WordCloud Import
 from wordcloud import WordCloud
 
@@ -35,9 +34,6 @@ tqdm.pandas()
 # ==============================================================================
 # Cache Resource Loading Functions
 # ==============================================================================
-# (Fungsi-fungsi load_kamus_normalisasi, load_combined_stopwords, get_stemmer,
-# load_tsv_dict, load_manual_dict, load_set, load_all_sentiment_dictionaries
-# tetap sama seperti sebelumnya, pastikan @st.cache_resource digunakan)
 @st.cache_resource
 def load_kamus_normalisasi(url):
     st.info(f"Mengunduh kamus normalisasi...")
@@ -215,8 +211,13 @@ def full_preprocess_and_label_df(_df, text_column, _kamus_normalisasi, _stop_wor
         nltk.data.find('tokenizers/punkt')
         df_processed['tokenized_text'] = df_processed['case_folded_text'].progress_apply(word_tokenize)
     except LookupError:
-        st.info("Mengunduh NLTK Punkt..."); nltk.download('punkt'); st.info("Selesai unduh.")
+        with st.spinner("Mengunduh NLTK Punkt..."): # Tampilkan spinner saat download
+            nltk.download('punkt', quiet=True)
+        st.success("Selesai unduh NLTK Punkt.")
         df_processed['tokenized_text'] = df_processed['case_folded_text'].progress_apply(word_tokenize)
+    except Exception as e:
+        st.error(f"Error saat tokenizing: {e}")
+        return pd.DataFrame() # Hentikan proses jika tokenizing gagal
 
     # Langkah 3: Normalization
     progress_bar.progress(3/total_steps, text="3/7 Normalization...")
@@ -291,7 +292,8 @@ def train_evaluate_tuned_models_no_smote(df_labeled, selected_test_size=0.2, tex
     start_time_svm = time.time()
     pipeline_svm_tuned = Pipeline([('tfidf', TfidfVectorizer()), ('svm', LinearSVC(random_state=42, max_iter=3000, dual=True))])
     param_grid_svm = {'tfidf__max_features': [5000, 7000, None], 'tfidf__ngram_range': [(1, 1), (1, 2)], 'tfidf__min_df': [1, 3], 'svm__C': [0.1, 1, 10]}
-    grid_search_svm = GridSearchCV(pipeline_svm_tuned, param_grid_svm, cv=3, scoring='accuracy', n_jobs=-1, verbose=0) # verbose=0 untuk UI bersih
+    # Gunakan refit='accuracy' secara eksplisit
+    grid_search_svm = GridSearchCV(pipeline_svm_tuned, param_grid_svm, cv=3, scoring='accuracy', refit='accuracy', n_jobs=-1, verbose=0) # verbose=0 untuk UI bersih
     grid_search_svm.fit(X_train, y_train)
     best_svm_model = grid_search_svm.best_estimator_
     y_pred_svm_tuned = best_svm_model.predict(X_test)
@@ -307,7 +309,8 @@ def train_evaluate_tuned_models_no_smote(df_labeled, selected_test_size=0.2, tex
     start_time_lr = time.time()
     pipeline_lr_tuned = Pipeline([('tfidf', TfidfVectorizer()), ('lr', LogisticRegression(random_state=42, max_iter=1000, solver='liblinear'))])
     param_grid_lr = {'tfidf__max_features': [5000, 7000, None], 'tfidf__ngram_range': [(1, 1), (1, 2)], 'tfidf__min_df': [1, 3], 'lr__C': [0.1, 1, 10, 100]}
-    grid_search_lr = GridSearchCV(pipeline_lr_tuned, param_grid_lr, cv=3, scoring='accuracy', n_jobs=-1, verbose=0)
+    # Gunakan refit='accuracy' secara eksplisit
+    grid_search_lr = GridSearchCV(pipeline_lr_tuned, param_grid_lr, cv=3, scoring='accuracy', refit='accuracy', n_jobs=-1, verbose=0)
     grid_search_lr.fit(X_train, y_train)
     best_lr_model = grid_search_lr.best_estimator_
     y_pred_lr_tuned = best_lr_model.predict(X_test)
@@ -322,7 +325,7 @@ def train_evaluate_tuned_models_no_smote(df_labeled, selected_test_size=0.2, tex
     return results
 
 # ==============================================================================
-# Single Text Processing Function (sama seperti sebelumnya)
+# Single Text Processing Function
 # ==============================================================================
 def process_single_text(input_text, _senti_dict, _sorted_idioms, _negating_words, _question_words):
     if not input_text or not isinstance(input_text, str) or not input_text.strip():
@@ -330,6 +333,7 @@ def process_single_text(input_text, _senti_dict, _sorted_idioms, _negating_words
     cleaned = clean_text(input_text)
     if not cleaned: return None, "Teks menjadi kosong setelah cleaning."
     case_folded = cleaned.lower()
+    # Pelabelan teks tunggal tetap pada teks sebelum stemming
     sentiment = label_sentiment_canggih(case_folded, _senti_dict, _sorted_idioms, _negating_words, _question_words)
     return sentiment, case_folded
 
@@ -345,6 +349,7 @@ def convert_df_to_csv(df):
 # ==============================================================================
 @st.cache_data(show_spinner=False)
 def generate_wordcloud(_df, sentiment_label, _stop_words, text_col='case_folded_text'):
+    # (Fungsi generate_wordcloud tetap sama)
     st.info(f"Membuat word cloud untuk sentimen '{sentiment_label}'...")
     text_data = _df[_df['sentiment'] == sentiment_label][text_col]
     if text_data.empty: st.write(f"Tidak ada data '{sentiment_label}'."); return None
@@ -372,6 +377,7 @@ Model SVM dan Logistic Regression dioptimalkan menggunakan **Hyperparameter Tuni
 st.info("Catatan: Proses preprocessing dan tuning hyperparameter mungkin memakan waktu beberapa menit tergantung ukuran data.")
 
 # --- Load Resources ---
+# Menampilkan spinner saat resource utama dimuat
 with st.spinner("⏳ Memuat sumber daya (kamus, stemmer)..."):
     url_kamus_norm = 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/nasalsabila_kamus-alay/_json_colloquial-indonesian-lexicon.txt'
     url_stopwords_online = 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/masdevid_id-stopwords/id.stopwords.02.01.2016.txt'
@@ -382,6 +388,9 @@ with st.spinner("⏳ Memuat sumber daya (kamus, stemmer)..."):
     stop_words = load_combined_stopwords(url_stopwords_online)
     stemmer = get_stemmer()
     senti_dict, sorted_idioms, negating_words, question_words = load_all_sentiment_dictionaries(lexicon_urls)
+    # Pengecekan NLTK dipindah ke dalam fungsi preprocessing agar tidak selalu download saat start
+    # try: nltk.data.find('tokenizers/punkt')
+    # except LookupError: st.info("Mengunduh NLTK Punkt..."); nltk.download('punkt', quiet=True)
 
 st.success("✅ Sumber daya siap.")
 st.markdown("---")
@@ -407,14 +416,35 @@ with tab1:
             st.session_state.current_filename = uploaded_file.name
 
         try:
-            if uploaded_file.name.endswith('.csv'): df_input = pd.read_csv(uploaded_file)
-            else: df_input = pd.read_excel(uploaded_file, engine='openpyxl')
+            # Baca file dengan spinner
+            with st.spinner(f"Membaca file {uploaded_file.name}..."):
+                if uploaded_file.name.endswith('.csv'):
+                    # Coba baca dengan encoding berbeda jika default gagal
+                    try:
+                        df_input = pd.read_csv(uploaded_file)
+                    except UnicodeDecodeError:
+                        uploaded_file.seek(0) # Kembali ke awal file
+                        df_input = pd.read_csv(uploaded_file, encoding='latin1')
+                else:
+                    df_input = pd.read_excel(uploaded_file, engine='openpyxl')
             st.success(f"File '{uploaded_file.name}' diunggah ({len(df_input)} baris).")
             st.dataframe(df_input.head(), hide_index=True)
 
             st.header("2. Pilih Kolom Teks")
             available_columns = [""] + df_input.columns.tolist()
-            text_column = st.selectbox("Pilih kolom:", options=available_columns, index=0, key="selectbox_column")
+            # Gunakan session state untuk menyimpan pilihan kolom terakhir
+            col_index = 0
+            if 'selected_text_column' in st.session_state and st.session_state.selected_text_column in available_columns:
+                col_index = available_columns.index(st.session_state.selected_text_column)
+
+            text_column = st.selectbox(
+                 "Pilih kolom:",
+                 options=available_columns,
+                 index=col_index, # Set index berdasarkan state
+                 key="selectbox_column",
+                 on_change=lambda: st.session_state.update(selected_text_column=st.session_state.selectbox_column) # Update state saat berubah
+            )
+
 
             if text_column:
                 st.info(f"Kolom teks yang dipilih: **{text_column}**")
@@ -427,22 +457,30 @@ with tab1:
                     if text_column not in df_input.columns: st.error("Kolom tidak valid.")
                     elif df_input[text_column].isnull().all(): st.error(f"Kolom '{text_column}' kosong.")
                     else:
+                        # Pengecekan tipe data dan konversi
                         if not pd.api.types.is_string_dtype(df_input[text_column]):
-                            try: df_input[text_column] = df_input[text_column].astype(str); st.warning(f"Kolom dikonversi ke teks.")
-                            except Exception as e: st.error(f"Gagal konversi: {e}"); st.stop()
+                            try:
+                                df_input[text_column] = df_input[text_column].astype(str)
+                                st.warning(f"Kolom '{text_column}' dikonversi ke tipe data teks (string).")
+                            except Exception as e:
+                                st.error(f"Gagal mengonversi kolom '{text_column}' ke teks: {e}")
+                                st.stop() # Hentikan eksekusi jika konversi gagal
 
+                        # Hapus baris dengan teks kosong atau NaN setelah konversi
                         df_valid = df_input.dropna(subset=[text_column])
                         df_valid = df_valid[df_valid[text_column].astype(str).str.strip().astype(bool)]
 
-                        if df_valid.empty: st.warning("Tidak ada teks valid.")
+                        if df_valid.empty: st.warning("Tidak ada baris dengan teks valid setelah pembersihan awal.")
                         else:
                             # --- Panggil fungsi preprocessing lengkap ---
-                            df_processed_labeled = full_preprocess_and_label_df(
-                                df_valid, text_column,
-                                kamus_normalisasi, stop_words, stemmer, # Preprocessing resources
-                                senti_dict, sorted_idioms, negating_words, question_words # Labeling resources
-                            )
-                            if df_processed_labeled.empty: st.warning("Tidak ada hasil setelah proses.")
+                            # Menampilkan spinner di sini agar lebih jelas
+                            with st.spinner("⏳ Memproses teks & melabel (lexicon)... Ini mungkin butuh waktu..."):
+                                df_processed_labeled = full_preprocess_and_label_df(
+                                    df_valid, text_column,
+                                    kamus_normalisasi, stop_words, stemmer, # Preprocessing resources
+                                    senti_dict, sorted_idioms, negating_words, question_words # Labeling resources
+                                )
+                            if df_processed_labeled.empty: st.warning("Tidak ada hasil setelah proses preprocessing & labeling.")
                             else: st.session_state.processed_df = df_processed_labeled # Store result
 
                 # --- Display Preprocessing & Labeling Results ---
@@ -462,11 +500,13 @@ with tab1:
                     col_wc1, col_wc2 = st.columns(2)
                     with col_wc1:
                         st.markdown("<h5>Positif 😊</h5>", unsafe_allow_html=True)
-                        wc_pos_array = generate_wordcloud(st.session_state.processed_df, 'positif', stop_words)
+                        with st.spinner("Membuat Word Cloud Positif..."):
+                             wc_pos_array = generate_wordcloud(st.session_state.processed_df, 'positif', stop_words)
                         if wc_pos_array is not None: st.image(wc_pos_array, use_column_width=True)
                     with col_wc2:
                         st.markdown("<h5>Negatif 😠</h5>", unsafe_allow_html=True)
-                        wc_neg_array = generate_wordcloud(st.session_state.processed_df, 'negatif', stop_words)
+                        with st.spinner("Membuat Word Cloud Negatif..."):
+                             wc_neg_array = generate_wordcloud(st.session_state.processed_df, 'negatif', stop_words)
                         if wc_neg_array is not None: st.image(wc_neg_array, use_column_width=True)
                     st.markdown("---")
 
@@ -516,9 +556,13 @@ with tab1:
                             'SVM (Tuned)': ('svm_tuned', 'Blues', axes_cm[1]),
                             'Log. Regression (Tuned)': ('logistic_regression_tuned', 'Oranges', axes_cm[2])
                         }
+                        # Ambil labels dari salah satu hasil (misal NB) karena harusnya sama
+                        display_labels = results_ml.get('naive_bayes', {}).get('labels', ['negatif', 'netral', 'positif']) # Default jika NB gagal
+
                         for model_name, (key, cmap, ax) in models_to_plot.items():
                             if key in results_ml:
-                                ConfusionMatrixDisplay(confusion_matrix=results_ml[key]['cm'], display_labels=results_ml[key]['labels']).plot(ax=ax, cmap=cmap, values_format='d')
+                                # Gunakan display_labels yang sudah ditentukan
+                                ConfusionMatrixDisplay(confusion_matrix=results_ml[key]['cm'], display_labels=display_labels).plot(ax=ax, cmap=cmap, values_format='d')
                                 ax.set_title(f"{model_name}\nAkurasi: {results_ml[key]['accuracy']:.2%}")
                                 ax.tick_params(axis='x', rotation=45)
                         plt.tight_layout(); st.pyplot(fig_cm)
@@ -526,7 +570,9 @@ with tab1:
                         # --- Download Button ---
                         st.header("5. Unduh Hasil Lengkap")
                         csv_data = convert_df_to_csv(st.session_state.processed_df)
-                        output_filename = f"hasil_sentimen_lengkap_{st.session_state.current_filename.split('.')[0]}.csv"
+                        # Nama file output lebih dinamis
+                        base_filename = st.session_state.current_filename.split('.')[0] if '.' in st.session_state.current_filename else st.session_state.current_filename
+                        output_filename = f"hasil_sentimen_{base_filename}_stemmed.csv"
                         st.download_button(label="📥 Unduh Data + Preprocessing + Label (.csv)", data=csv_data, file_name=output_filename, mime='text/csv', key="download_button")
 
                 elif not text_column: st.warning("☝️ Pilih kolom teks untuk memulai proses.")
