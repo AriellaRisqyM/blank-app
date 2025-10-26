@@ -220,4 +220,417 @@ def label_sentiment_canggih(text, senti_dict, sorted_idioms, negating_words, que
 def full_preprocess_and_label_df(_df, text_column, _kamus_normalisasi, _stop_words, _stemmer, _senti_dict, _sorted_idioms, _negating_words, _question_words):
     """Applies all preprocessing steps including stemming and lexicon labeling."""
     st.info("Memulai preprocessing lengkap & pelabelan lexicon...")
-    df_processed = _
+    df_processed = _df.copy()
+
+    total_steps = 7
+    progress_bar = st.progress(0, text="Memulai...")
+
+    # Langkah 1: Cleaning & Case Folding
+    progress_bar.progress(1/total_steps, text="1/7 Cleaning & Case Folding...")
+    df_processed['cleaned_text'] = df_processed[text_column].astype(str).apply(clean_text)
+    df_processed.dropna(subset=['cleaned_text'], inplace=True)
+    df_processed = df_processed[df_processed['cleaned_text'].str.strip().astype(bool)]
+    if df_processed.empty: st.warning("Tidak ada teks valid setelah cleaning."); return pd.DataFrame()
+    df_processed['case_folded_text'] = df_processed['cleaned_text'].str.lower()
+
+    # Langkah 2: Tokenizing
+    progress_bar.progress(2/total_steps, text="2/7 Tokenizing...")
+    # Pengecekan NLTK sudah di STEP 1, jadi bisa langsung pakai word_tokenize
+    try:
+        # Gunakan word_tokenize yang sudah diimpor secara global
+        df_processed['tokenized_text'] = df_processed['case_folded_text'].progress_apply(word_tokenize)
+    except NameError:
+         # Ini seharusnya tidak terjadi jika impor di STEP 1 benar
+         st.error("Error: Fungsi 'word_tokenize' tidak terdefinisi. Periksa impor NLTK di awal script.")
+         return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error saat tokenizing: {e}")
+        return pd.DataFrame()
+
+    # Langkah 3: Normalization
+    progress_bar.progress(3/total_steps, text="3/7 Normalization...")
+    df_processed['normalized_text'] = df_processed['tokenized_text'].progress_apply(lambda tokens: normalize_tokens(tokens, _kamus_normalisasi))
+
+    # Langkah 4: Stopword Removal
+    progress_bar.progress(4/total_steps, text="4/7 Stopword Removal...")
+    df_processed['stopwords_removed'] = df_processed['normalized_text'].progress_apply(lambda tokens: remove_stopwords(tokens, _stop_words))
+
+    # Langkah 5: Stemming
+    progress_bar.progress(5/total_steps, text="5/7 Stemming...")
+    df_processed['stemmed_tokens'] = df_processed['stopwords_removed'].progress_apply(lambda tokens: stem_tokens(tokens, _stemmer))
+
+    # Langkah 6: Join Stemmed Tokens
+    progress_bar.progress(6/total_steps, text="6/7 Menggabungkan Teks Stemmed...")
+    df_processed['stemmed_joined_text'] = df_processed['stemmed_tokens'].progress_apply(lambda tokens: ' '.join(tokens) if isinstance(tokens, list) else '')
+
+    # Langkah 7: Lexicon Labeling (on 'case_folded_text')
+    progress_bar.progress(7/total_steps, text="7/7 Pelabelan Sentimen (Lexicon)...")
+    df_processed['sentiment'] = df_processed['case_folded_text'].progress_apply(
+        lambda text: label_sentiment_canggih(text, _senti_dict, _sorted_idioms, _negating_words, _question_words)
+    )
+    progress_bar.empty()
+
+    st.success("Preprocessing Lengkap & Pelabelan Lexicon Selesai.")
+    cols_to_return = [text_column, 'case_folded_text', 'stemmed_joined_text', 'sentiment'] + [col for col in df_processed.columns if col not in [text_column, 'case_folded_text','stemmed_joined_text','sentiment', 'cleaned_text', 'tokenized_text', 'normalized_text', 'stopwords_removed', 'stemmed_tokens']]
+    return df_processed[cols_to_return]
+
+# ==============================================================================
+# ML Modeling Function (Dengan Tuning, Tanpa SMOTE - Tetap Sama)
+# ==============================================================================
+# (Fungsi train_evaluate_tuned_models_no_smote tetap sama seperti sebelumnya)
+def train_evaluate_tuned_models_no_smote(df_labeled, selected_test_size=0.2, text_col_for_tfidf='stemmed_joined_text', target_col='sentiment'):
+    """Performs Train/Test split, TF-IDF, trains NB, tunes+trains SVM & LR, returns results."""
+    st.info("Memulai persiapan data dan pelatihan model ML (dengan tuning, tanpa SMOTE)...")
+    start_time_total = time.time() # Mulai timer total
+
+    if df_labeled.empty or target_col not in df_labeled.columns or text_col_for_tfidf not in df_labeled.columns:
+        st.error("Dataframe input kosong atau kolom yang dibutuhkan tidak ada.")
+        return None
+
+    df_labeled = df_labeled.dropna(subset=[text_col_for_tfidf, target_col])
+    if len(df_labeled[target_col].unique()) < 2: st.error(f"Hanya ada {len(df_labeled[target_col].unique())} kelas unik. Minimal 2."); return None
+    if len(df_labeled) < 50: st.warning(f"Jumlah data ({len(df_labeled)}) sangat sedikit.")
+
+    X = df_labeled[text_col_for_tfidf]
+    y = df_labeled[target_col]
+    labels = sorted(y.unique())
+
+    # Split Data
+    try:
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=selected_test_size, random_state=42, stratify=y)
+        st.write(f"Data dibagi: {len(X_train)} train, {len(X_test)} test (Test Size = {selected_test_size:.0%})")
+        st.write("Distribusi kelas (Train):", y_train.value_counts())
+    except ValueError as e: st.error(f"Gagal membagi data: {e}"); return None
+
+    results = {}
+
+    # --- Naive Bayes (Baseline) ---
+    st.write("--- Melatih Naive Bayes (Baseline)...")
+    start_time_nb = time.time()
+    pipeline_nb = Pipeline([('tfidf', TfidfVectorizer(max_features=5000, ngram_range=(1,2))), ('nb', MultinomialNB())])
+    pipeline_nb.fit(X_train, y_train)
+    y_pred_nb = pipeline_nb.predict(X_test)
+    nb_accuracy = accuracy_score(y_test, y_pred_nb)
+    nb_report = classification_report(y_test, y_pred_nb, output_dict=True, zero_division=0)
+    nb_cm = confusion_matrix(y_test, y_pred_nb, labels=labels) # Ambil label dari y
+    results['naive_bayes'] = {'accuracy': nb_accuracy, 'report': nb_report, 'cm': nb_cm, 'labels': labels, 'model': pipeline_nb}
+    st.write(f"Akurasi Naive Bayes: {nb_accuracy*100:.2f}% (Waktu: {time.time() - start_time_nb:.2f} detik)")
+
+    # --- SVM (Tuning) ---
+    st.write("--- Melakukan Tuning SVM (LinearSVC)...")
+    start_time_svm = time.time()
+    pipeline_svm_tuned = Pipeline([('tfidf', TfidfVectorizer()), ('svm', LinearSVC(random_state=42, max_iter=3000, dual=True))])
+    param_grid_svm = {'tfidf__max_features': [5000, 7000, None], 'tfidf__ngram_range': [(1, 1), (1, 2)], 'tfidf__min_df': [1, 3], 'svm__C': [0.1, 1, 10]}
+    # Gunakan refit='accuracy' secara eksplisit
+    grid_search_svm = GridSearchCV(pipeline_svm_tuned, param_grid_svm, cv=3, scoring='accuracy', refit='accuracy', n_jobs=-1, verbose=0) # verbose=0 untuk UI bersih
+    grid_search_svm.fit(X_train, y_train)
+    best_svm_model = grid_search_svm.best_estimator_
+    y_pred_svm_tuned = best_svm_model.predict(X_test)
+    svm_accuracy = accuracy_score(y_test, y_pred_svm_tuned)
+    svm_report = classification_report(y_test, y_pred_svm_tuned, output_dict=True, zero_division=0)
+    svm_cm = confusion_matrix(y_test, y_pred_svm_tuned, labels=labels)
+    results['svm_tuned'] = {'accuracy': svm_accuracy, 'report': svm_report, 'cm': svm_cm, 'labels': labels, 'model': best_svm_model, 'best_params': grid_search_svm.best_params_, 'cv_score': grid_search_svm.best_score_}
+    st.write(f"Akurasi SVM (Tuned): {svm_accuracy*100:.2f}% (CV Score: {grid_search_svm.best_score_:.2%}, Waktu: {time.time() - start_time_svm:.2f} detik)")
+    st.write(f"Parameter SVM terbaik: `{grid_search_svm.best_params_}`")
+
+    # --- Logistic Regression (Tuning) ---
+    st.write("--- Melakukan Tuning Logistic Regression...")
+    start_time_lr = time.time()
+    pipeline_lr_tuned = Pipeline([('tfidf', TfidfVectorizer()), ('lr', LogisticRegression(random_state=42, max_iter=1000, solver='liblinear'))])
+    param_grid_lr = {'tfidf__max_features': [5000, 7000, None], 'tfidf__ngram_range': [(1, 1), (1, 2)], 'tfidf__min_df': [1, 3], 'lr__C': [0.1, 1, 10, 100]}
+    # Gunakan refit='accuracy' secara eksplisit
+    grid_search_lr = GridSearchCV(pipeline_lr_tuned, param_grid_lr, cv=3, scoring='accuracy', refit='accuracy', n_jobs=-1, verbose=0)
+    grid_search_lr.fit(X_train, y_train)
+    best_lr_model = grid_search_lr.best_estimator_
+    y_pred_lr_tuned = best_lr_model.predict(X_test)
+    lr_accuracy = accuracy_score(y_test, y_pred_lr_tuned)
+    lr_report = classification_report(y_test, y_pred_lr_tuned, output_dict=True, zero_division=0)
+    lr_cm = confusion_matrix(y_test, y_pred_lr_tuned, labels=labels)
+    results['logistic_regression_tuned'] = {'accuracy': lr_accuracy, 'report': lr_report, 'cm': lr_cm, 'labels': labels, 'model': best_lr_model, 'best_params': grid_search_lr.best_params_, 'cv_score': grid_search_lr.best_score_}
+    st.write(f"Akurasi Logistic Regression (Tuned): {lr_accuracy*100:.2f}% (CV Score: {grid_search_lr.best_score_:.2%}, Waktu: {time.time() - start_time_lr:.2f} detik)")
+    st.write(f"Parameter LR terbaik: `{grid_search_lr.best_params_}`")
+
+    st.success(f"Pelatihan dan evaluasi model ML selesai. (Total Waktu: {time.time() - start_time_total:.2f} detik)")
+    return results
+
+
+# ==============================================================================
+# Single Text Processing Function (Tetap Sama)
+# ==============================================================================
+# (Fungsi process_single_text tetap sama)
+def process_single_text(input_text, _senti_dict, _sorted_idioms, _negating_words, _question_words):
+    if not input_text or not isinstance(input_text, str) or not input_text.strip():
+        return None, "Input teks kosong atau tidak valid."
+    cleaned = clean_text(input_text)
+    if not cleaned: return None, "Teks menjadi kosong setelah cleaning."
+    case_folded = cleaned.lower()
+    # Pelabelan teks tunggal tetap pada teks sebelum stemming
+    sentiment = label_sentiment_canggih(case_folded, _senti_dict, _sorted_idioms, _negating_words, _question_words)
+    return sentiment, case_folded
+
+# ==============================================================================
+# Helper Function for Download (Tetap Sama)
+# ==============================================================================
+# (Fungsi convert_df_to_csv tetap sama)
+@st.cache_data
+def convert_df_to_csv(df):
+   return df.to_csv(index=False).encode('utf-8')
+
+# ==============================================================================
+# Word Cloud Function (Tetap Sama)
+# ==============================================================================
+# (Fungsi generate_wordcloud tetap sama)
+@st.cache_data(show_spinner=False)
+def generate_wordcloud(_df, sentiment_label, _stop_words, text_col='case_folded_text'):
+    st.info(f"Membuat word cloud untuk sentimen '{sentiment_label}'...")
+    text_data = _df[_df['sentiment'] == sentiment_label][text_col]
+    if text_data.empty: st.write(f"Tidak ada data '{sentiment_label}'."); return None
+    all_text = " ".join(text for text in text_data.astype(str)) # Pastikan string
+    if not all_text.strip(): st.write(f"Tidak ada teks valid '{sentiment_label}'."); return None
+    try:
+        colormap = 'Greens' if sentiment_label == 'positif' else ('Reds' if sentiment_label == 'negatif' else 'Greys')
+        wordcloud = WordCloud(width=800, height=400, background_color='white', stopwords=_stop_words, colormap=colormap, min_font_size=10, prefer_horizontal=0.9).generate(all_text)
+        return wordcloud.to_array()
+    except Exception as e: st.warning(f"Gagal word cloud '{sentiment_label}': {e}"); return None
+
+# ==============================================================================
+# Streamlit UI
+# ==============================================================================
+
+st.set_page_config(layout="wide", page_title="Analisis Sentimen Lexicon+ML")
+
+st.title("📊 Aplikasi Analisis Sentimen (Lexicon + ML)")
+st.markdown("""
+Aplikasi ini melakukan preprocessing (termasuk **Stemming**), pelabelan sentimen berbasis **Lexicon** (InSet & SentiStrength),
+dan melatih model **Machine Learning** (Naive Bayes, SVM, Logistic Regression) menggunakan TF-IDF pada data yang diunggah.
+Model SVM dan Logistic Regression dioptimalkan menggunakan **Hyperparameter Tuning**. **SMOTE tidak digunakan**.
+""")
+st.info("Catatan: Proses preprocessing dan tuning hyperparameter mungkin memakan waktu beberapa menit tergantung ukuran data.")
+
+# --- Load Resources ---
+# Pindahkan pemanggilan fungsi load ke sini agar hanya dijalankan sekali saat app start
+# Tidak perlu spinner di sini karena @st.cache_resource menangani caching
+# with st.spinner("⏳ Memuat sumber daya (kamus, stemmer)..."):
+url_kamus_norm = 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/nasalsabila_kamus-alay/_json_colloquial-indonesian-lexicon.txt'
+url_stopwords_online = 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/masdevid_id-stopwords/id.stopwords.02.01.2016.txt'
+lexicon_urls = { 'inset_fajri_pos': 'https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv', 'inset_fajri_neg': 'https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv', 'inset_onpilot_pos': 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv', 'inset_onpilot_neg': 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv', 'senti_json': 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/_json_sentiwords_id.txt', 'booster': 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/boosterwords_id.txt', 'emoticon': 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/emoticon_id.txt', 'idiom': 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/idioms_id.txt', 'negating': 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/negatingword.txt', 'question': 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/questionword.txt' }
+
+kamus_normalisasi = load_kamus_normalisasi(url_kamus_norm)
+stop_words = load_combined_stopwords(url_stopwords_online)
+stemmer = get_stemmer()
+senti_dict, sorted_idioms, negating_words, question_words = load_all_sentiment_dictionaries(lexicon_urls)
+
+st.success("✅ Sumber daya siap.") # Pindahkan pesan ini setelah semua resource dimuat
+st.markdown("---")
+
+# --- Tabs ---
+tab1, tab2 = st.tabs(["📤 Unggah File (Preprocessing + Lexicon + ML)", "⌨️ Input Teks Langsung (Hanya Lexicon)"])
+
+# --- Tab 1: File Upload ---
+with tab1:
+    st.header("1. Unggah Data Anda (CSV/Excel)")
+    uploaded_file = st.file_uploader("Pilih file", type=['csv', 'xlsx'], label_visibility="collapsed", key="file_uploader")
+
+    # Initialize session state
+    if 'processed_df' not in st.session_state: st.session_state['processed_df'] = None
+    if 'ml_results' not in st.session_state: st.session_state['ml_results'] = None
+    if 'current_filename' not in st.session_state: st.session_state['current_filename'] = ""
+
+    if uploaded_file is not None:
+        # Clear state if new file
+        if uploaded_file.name != st.session_state.current_filename:
+            st.session_state.processed_df = None
+            st.session_state.ml_results = None
+            st.session_state.current_filename = uploaded_file.name
+            # Reset pilihan kolom jika file baru
+            if 'selectbox_column' in st.session_state:
+                del st.session_state['selectbox_column']
+            if 'selected_text_column' in st.session_state:
+                 del st.session_state['selected_text_column']
+
+
+        try:
+            # Baca file dengan spinner
+            with st.spinner(f"Membaca file {uploaded_file.name}..."):
+                if uploaded_file.name.endswith('.csv'):
+                    try: df_input = pd.read_csv(uploaded_file)
+                    except UnicodeDecodeError:
+                        uploaded_file.seek(0); df_input = pd.read_csv(uploaded_file, encoding='latin1')
+                else: df_input = pd.read_excel(uploaded_file, engine='openpyxl')
+            st.success(f"File '{uploaded_file.name}' diunggah ({len(df_input)} baris).")
+            st.dataframe(df_input.head(), hide_index=True)
+
+            st.header("2. Pilih Kolom Teks")
+            available_columns = [""] + df_input.columns.tolist()
+            # Gunakan session state untuk menyimpan pilihan kolom terakhir
+            col_index = 0
+            # Cek apakah state ada DAN value-nya valid di kolom saat ini
+            if 'selected_text_column' in st.session_state and st.session_state.selected_text_column in available_columns:
+                 col_index = available_columns.index(st.session_state.selected_text_column)
+            else: # Jika tidak valid (misal file baru), reset state
+                 if 'selected_text_column' in st.session_state:
+                      del st.session_state['selected_text_column']
+
+            # Definisikan callback untuk update state
+            def update_selected_column():
+                 st.session_state.selected_text_column = st.session_state.selectbox_column
+
+            text_column = st.selectbox(
+                 "Pilih kolom:",
+                 options=available_columns,
+                 index=col_index, # Set index berdasarkan state
+                 key="selectbox_column",
+                 on_change=update_selected_column # Panggil callback saat berubah
+            )
+
+
+            if text_column:
+                st.info(f"Kolom teks yang dipilih: **{text_column}**")
+
+                # --- Preprocessing & Lexicon Labeling Button ---
+                st.header("3. Proses Preprocessing Lengkap & Labeling Lexicon")
+                if st.button("🔬 Proses Teks (Stemming) & Label Lexicon", key="button_process_lexicon"):
+                    st.session_state.processed_df = None; st.session_state.ml_results = None # Clear previous
+
+                    if text_column not in df_input.columns: st.error("Kolom tidak valid.")
+                    elif df_input[text_column].isnull().all(): st.error(f"Kolom '{text_column}' kosong.")
+                    else:
+                        # Pengecekan tipe data dan konversi
+                        if not pd.api.types.is_string_dtype(df_input[text_column]):
+                            try:
+                                df_input[text_column] = df_input[text_column].astype(str)
+                                st.warning(f"Kolom '{text_column}' dikonversi ke tipe data teks (string).")
+                            except Exception as e:
+                                st.error(f"Gagal mengonversi kolom '{text_column}' ke teks: {e}")
+                                st.stop()
+
+                        # Hapus baris dengan teks kosong atau NaN setelah konversi
+                        df_valid = df_input.dropna(subset=[text_column])
+                        df_valid = df_valid[df_valid[text_column].astype(str).str.strip().astype(bool)]
+
+                        if df_valid.empty: st.warning("Tidak ada baris dengan teks valid setelah pembersihan awal.")
+                        else:
+                            # Panggil fungsi preprocessing lengkap
+                            # Spinner dikontrol di dalam fungsi full_preprocess_and_label_df
+                            df_processed_labeled = full_preprocess_and_label_df(
+                                df_valid, text_column,
+                                kamus_normalisasi, stop_words, stemmer,
+                                senti_dict, sorted_idioms, negating_words, question_words
+                            )
+                            if df_processed_labeled.empty: st.warning("Tidak ada hasil setelah proses preprocessing & labeling.")
+                            else: st.session_state.processed_df = df_processed_labeled
+
+                # --- Display Preprocessing & Labeling Results ---
+                # Cek jika dataframe hasil proses ada di session state
+                if st.session_state.processed_df is not None and not st.session_state.processed_df.empty:
+                    st.success("🎉 Preprocessing Lengkap & Labeling Lexicon Selesai!")
+                    st.subheader("Hasil (Contoh):")
+                    st.dataframe(st.session_state.processed_df[[text_column, 'stemmed_joined_text', 'sentiment']].head(10), hide_index=True)
+                    st.subheader("Distribusi Sentimen (Lexicon):")
+                    sentiment_counts_lex = st.session_state.processed_df['sentiment'].value_counts()
+                    st.bar_chart(sentiment_counts_lex)
+                    st.write(sentiment_counts_lex)
+
+                    # --- Word Clouds ---
+                    st.subheader("Word Clouds Sentimen (Lexicon):")
+                    st.write("Dibuat dari 'case_folded_text' (sebelum stemming).")
+                    col_wc1, col_wc2 = st.columns(2)
+                    with col_wc1:
+                        st.markdown("<h5>Positif 😊</h5>", unsafe_allow_html=True)
+                        with st.spinner("Membuat Word Cloud Positif..."):
+                             wc_pos_array = generate_wordcloud(st.session_state.processed_df, 'positif', stop_words)
+                        if wc_pos_array is not None: st.image(wc_pos_array, use_column_width=True)
+                    with col_wc2:
+                        st.markdown("<h5>Negatif 😠</h5>", unsafe_allow_html=True)
+                        with st.spinner("Membuat Word Cloud Negatif..."):
+                             wc_neg_array = generate_wordcloud(st.session_state.processed_df, 'negatif', stop_words)
+                        if wc_neg_array is not None: st.image(wc_neg_array, use_column_width=True)
+                    st.markdown("---")
+
+                    # --- ML Modeling Button ---
+                    st.header("4. Latih & Evaluasi Model ML (Input: Teks Stemmed)")
+                    st.warning("Model ML (NB, SVM Tuned, LR Tuned) akan dilatih menggunakan 'sentiment' hasil lexicon sebagai target dan 'stemmed_joined_text' sebagai fitur.")
+
+                    selected_test_size = st.slider(label="Pilih Test Size:", min_value=0.1, max_value=0.5, value=0.2, step=0.05, format="%.0f%%", key="slider_test_size")
+                    st.info(f"Data uji: {selected_test_size:.0%}. Data Latih: {1-selected_test_size:.0%}")
+
+                    if st.button("🤖 Latih & Tuning Model ML", key="button_train_ml"):
+                        st.session_state.ml_results = None # Clear previous
+                        with st.spinner("⏳ Melatih & mengevaluasi model ML (tuning mungkin lama)..."):
+                            ml_results_dict = train_evaluate_tuned_models_no_smote(
+                                st.session_state.processed_df,
+                                selected_test_size=selected_test_size,
+                                text_col_for_tfidf='stemmed_joined_text' # Gunakan teks stemmed
+                            )
+                            if ml_results_dict: st.session_state.ml_results = ml_results_dict
+
+                    # --- Display ML Results ---
+                    if st.session_state.ml_results is not None:
+                        st.success("🎉 Pelatihan & Evaluasi Model ML Selesai!")
+                        results_ml = st.session_state.ml_results
+
+                        st.subheader("Hasil Evaluasi Model:")
+                        col_m1, col_m2, col_m3 = st.columns(3)
+                        with col_m1: st.metric("Akurasi Naive Bayes", f"{results_ml.get('naive_bayes', {}).get('accuracy', 0):.2%}")
+                        with col_m2: st.metric("Akurasi SVM (Tuned)", f"{results_ml.get('svm_tuned', {}).get('accuracy', 0):.2%}", help=f"CV Score: {results_ml.get('svm_tuned', {}).get('cv_score', 0):.2%}")
+                        with col_m3: st.metric("Akurasi Log. Reg. (Tuned)", f"{results_ml.get('logistic_regression_tuned', {}).get('accuracy', 0):.2%}", help=f"CV Score: {results_ml.get('logistic_regression_tuned', {}).get('cv_score', 0):.2%}")
+
+                        with st.expander("Lihat Laporan Klasifikasi Detail"):
+                            if 'naive_bayes' in results_ml: st.text("Naive Bayes:"); st.dataframe(pd.DataFrame(results_ml['naive_bayes']['report']).transpose())
+                            if 'svm_tuned' in results_ml: st.text("SVM (Tuned):"); st.dataframe(pd.DataFrame(results_ml['svm_tuned']['report']).transpose())
+                            if 'logistic_regression_tuned' in results_ml: st.text("Logistic Regression (Tuned):"); st.dataframe(pd.DataFrame(results_ml['logistic_regression_tuned']['report']).transpose())
+
+                        st.subheader("Confusion Matrix:")
+                        fig_cm, axes_cm = plt.subplots(1, 3, figsize=(18, 5))
+                        models_to_plot = {
+                            'Naive Bayes': ('naive_bayes', 'Greens', axes_cm[0]),
+                            'SVM (Tuned)': ('svm_tuned', 'Blues', axes_cm[1]),
+                            'Log. Reg. (Tuned)': ('logistic_regression_tuned', 'Oranges', axes_cm[2])
+                        }
+                        # Ambil labels dari hasil pertama yang tersedia
+                        display_labels = next((res['labels'] for res in results_ml.values() if 'labels' in res), ['negatif', 'netral', 'positif'])
+
+                        for model_name, (key, cmap, ax) in models_to_plot.items():
+                            if key in results_ml:
+                                try: # Tambahkan try-except untuk plot CM
+                                     ConfusionMatrixDisplay(confusion_matrix=results_ml[key]['cm'], display_labels=display_labels).plot(ax=ax, cmap=cmap, values_format='d')
+                                     ax.set_title(f"{model_name}\nAkurasi: {results_ml[key]['accuracy']:.2%}")
+                                     ax.tick_params(axis='x', rotation=45)
+                                except Exception as plot_err:
+                                     st.warning(f"Gagal membuat CM untuk {model_name}: {plot_err}")
+                                     ax.set_title(f"{model_name}\nPlot Gagal")
+                            else:
+                                 ax.text(0.5, 0.5, 'N/A', horizontalalignment='center', verticalalignment='center', transform=ax.transAxes)
+                                 ax.set_title(model_name)
+
+                        plt.tight_layout(); st.pyplot(fig_cm)
+
+                        # --- Download Button ---
+                        st.header("5. Unduh Hasil Lengkap")
+                        csv_data = convert_df_to_csv(st.session_state.processed_df)
+                        base_filename = st.session_state.current_filename.split('.')[0] if '.' in st.session_state.current_filename else st.session_state.current_filename
+                        output_filename = f"hasil_sentimen_{base_filename}_stemmed.csv"
+                        st.download_button(label="📥 Unduh Data + Preprocessing + Label (.csv)", data=csv_data, file_name=output_filename, mime='text/csv', key="download_button")
+
+                elif not text_column: st.warning("☝️ Pilih kolom teks untuk memulai proses.")
+
+        except Exception as e: st.error(f"Error membaca atau memproses file: {e}")
+    else: st.info("Unggah file CSV atau Excel di atas untuk memulai.")
+
+
+# --- Tab 2: Text Input ---
+with tab2:
+    st.header("Analisis Teks Tunggal (Hanya Lexicon)")
+    st.info("Fitur ini hanya menggunakan metode berbasis kamus (lexicon) pada teks sebelum stemming.")
+    user_text = st.text_area("Ketik atau paste teks Anda:", height=150, key="text_area_input")
+
+    if st.button("🚀 Analisis Teks Ini!", key="button_process_text"):
+        if user_text and user_text.strip():
+            with st.spinner("⏳ Menganalisis teks..."):
+                hasil_sentimen, teks_diproses = process_single_text(
+                    user_text, senti_dict, sorted_idioms, negating_words, question_words
+                )
+            st.subheader("Hasil Analisis Teks:")
+            if hasil_sentimen:
+                st.write("Teks setelah Cleaning & Case Folding:")
+                st.info(f"`{te
