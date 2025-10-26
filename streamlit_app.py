@@ -24,7 +24,8 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.pipeline import Pipeline
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+import nltk
+from nltk.tokenize import word_tokenize # <-- Pastikan baris ini ada dan benar
 # WordCloud Import
 from wordcloud import WordCloud
 
