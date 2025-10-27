@@ -230,7 +230,5 @@ with tab2:
                 st.success("✅ Positif 😊")
             elif sentiment == "negatif":
                 st.error("❌ Negatif 😠")
-            else:
-                st.warning("⚠️ Tidak relevan dengan Polri.")
         else:
             st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
