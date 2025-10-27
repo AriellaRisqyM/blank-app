@@ -227,3 +227,24 @@ with tab1:
                     "hasil_sentimen_polri.csv",
                     "text/csv"
                 )
+            else:
+                st.warning("Tidak ada data relevan dengan Polri.")
+
+# ---------------- TAB 2 ----------------
+with tab2:
+    st.subheader("💬 Analisis Cepat Teks Tunggal")
+    input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
+    if st.button("🔍 Analisis Teks Ini"):
+        if input_text.strip():
+            sentiment, cleaned = analyze_single_text(input_text, pos_lex, neg_lex)
+            st.write("**Teks Setelah Preprocessing:**")
+            st.info(cleaned)
+            st.write("**Hasil Sentimen:**")
+            if sentiment == "positif":
+                st.success("✅ Positif 😊")
+            elif sentiment == "negatif":
+                st.error("❌ Negatif 😠")
+            else:
+                st.warning("⚠️ Tidak relevan dengan Polri.")
+        else:
+            st.warning("Masukkan teks terlebih dahulu.")
