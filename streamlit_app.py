@@ -228,7 +228,7 @@ with tab2:
             st.write("**Hasil Sentimen:**")
             if sentiment == "positif":
                 st.success("✅ Positif 😊")
-            elif sentiment == "negatif":
+            else sentiment == "negatif":
                 st.error("❌ Negatif 😠")
         else:
             st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
