@@ -1,130 +1,167 @@
 # ==============================================================================
 # STREAMLIT: Analisis Sentimen Polri (Lexicon + ML)
-# Pipeline: Preprocessing (termasuk filter Polri) → Labeling (2 kelas) → TF-IDF → NB & SVM
-# Dua Fitur: Upload File & Ketik Teks Input
 # ==============================================================================
-
 import streamlit as st
 import pandas as pd
-import requests
-import re
+import requests, re, json, io
+import matplotlib.pyplot as plt
+import seaborn as sns
+from wordcloud import WordCloud
 from tqdm.auto import tqdm
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import (
+    accuracy_score, classification_report, confusion_matrix
+)
 
 tqdm.pandas()
+st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
+st.title("📊 Analisis Sentimen Polri Modular (Lexicon + ML)")
 
 # ==============================================================================
-# 🔹 Preprocessing (Cleaning + Filter Polri)
+# 🔹 Preprocessing Dasar
 # ==============================================================================
 def preprocess_text(text):
-    """Membersihkan teks dari URL, mention, hashtag, dan simbol."""
+    """Membersihkan teks dari URL, mention, hashtag, simbol."""
     if not isinstance(text, str):
         return ""
-    text = re.sub(r'http\S+', '', text)
-    text = re.sub(r'@\w+', '', text)
-    text = re.sub(r'#', ' ', text)
-    text = re.sub(r'[^a-zA-Z\s]', '', text)
-    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r"http\S+", "", text)
+    text = re.sub(r"@\w+", "", text)
+    text = re.sub(r"#", " ", text)
+    text = re.sub(r"[^a-zA-Z\s]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
     return text.lower()
 
 def is_relevant_to_polri(text):
-    """Cek apakah teks berkaitan dengan Polri dan bukan TNI/dll."""
+    """Cek relevansi teks terhadap Polri."""
     keywords_polri = [
-        'polri', 'polisi', 'kapolri', 'brimob', 'polda',
-        'polsek', 'polres', 'satlantas', 'bhayangkara', 'penyidik'
+        "polri","polisi","kapolri","brimob","polda","polsek","polres",
+        "satlantas","bhayangkara","penyidik","reskrim","sabhara","intelkam","propam"
     ]
     exclude_keywords = [
-        'tni', 'tentara', 'prajurit', 'kkb', 'ad', 'au', 'al', 'kostrad', 'kopassus'
+        "tni","tentara","prajurit","ad","au","al","kostrad","kopassus","kkb"
     ]
-    # Pola regex
-    pattern_polri = r'\b(?:' + '|'.join(keywords_polri) + r')\b'
-    pattern_exclude = r'\b(?:' + '|'.join(exclude_keywords) + r')\b'
-
-    # Relevan jika mengandung kata Polri dan tidak mengandung TNI/dll
+    pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
+    pattern_exclude = r"\b(?:{})\b".format("|".join(exclude_keywords))
     return bool(re.search(pattern_polri, text)) and not re.search(pattern_exclude, text)
 
 # ==============================================================================
-# 🔹 Labeling (2 kelas: positif / negatif)
+# 🔹 Load Kamus & Leksikon
 # ==============================================================================
-def label_sentiment_two_class(text, positive_lexicon, negative_lexicon):
-    """Labeling 2 kelas berdasarkan jumlah kata positif dan negatif."""
-    if not isinstance(text, str):
-        return 'negatif'
+@st.cache_resource
+def load_lexicons():
+    st.info("📚 Memuat seluruh kamus dan leksikon...")
 
-    tokens = text.split()
-    pos = sum(1 for t in tokens if t in positive_lexicon)
-    neg = sum(1 for t in tokens if t in negative_lexicon)
+    urls = {
+        "normalisasi": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/nasalsabila_kamus-alay/_json_colloquial-indonesian-lexicon.txt",
+        "stopword": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/masdevid_id-stopwords/id.stopwords.02.01.2016.txt",
+        "inset_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
+        "inset_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
+    }
 
+    # Kamus normalisasi
+    norm = requests.get(urls["normalisasi"]).text
+    kamus_normalisasi = json.loads(norm)
+
+    # Stopword
+    sw = set(requests.get(urls["stopword"]).text.splitlines())
+
+    # InSet Lexicon
+    pos = set(pd.read_csv(urls["inset_pos"], sep="\t", header=None)[0].dropna().astype(str))
+    neg = set(pd.read_csv(urls["inset_neg"], sep="\t", header=None)[0].dropna().astype(str))
+
+    st.success(f"Leksikon dimuat: {len(pos)} positif, {len(neg)} negatif, {len(sw)} stopword.")
+    return kamus_normalisasi, sw, pos, neg
+
+kamus_normalisasi, stopword_set, pos_lex, neg_lex = load_lexicons()
+
+# ==============================================================================
+# 🔹 Labeling (2 kelas)
+# ==============================================================================
+def label_sentiment_two_class(text, pos_lex, neg_lex):
+    tokens = [t for t in text.split() if t not in stopword_set]
+    pos = sum(1 for t in tokens if t in pos_lex)
+    neg = sum(1 for t in tokens if t in neg_lex)
     if pos == 0 and neg == 0:
-        return 'negatif'
-
-    return 'positif' if pos >= neg else 'negatif'
+        return "negatif"
+    return "positif" if pos >= neg else "negatif"
 
 # ==============================================================================
-# 🔹 Preprocessing + Filter + Labeling (gabung)
+# 🔹 Preprocessing + Labeling
 # ==============================================================================
 @st.cache_data
 def preprocess_and_label(df, text_col, pos_lex, neg_lex):
-    """Preprocessing lengkap: cleaning, filter Polri, labeling 2 kelas."""
-    st.info("⚙️ Memulai preprocessing dan filter Polri...")
-
     df = df.copy()
     df[text_col] = df[text_col].astype(str)
-    df['cleaned_text'] = df[text_col].apply(preprocess_text)
-
-    # Filter hanya teks relevan dengan Polri
-    df = df[df['cleaned_text'].apply(is_relevant_to_polri)]
+    df["cleaned_text"] = df[text_col].apply(preprocess_text)
+    df = df[df["cleaned_text"].apply(is_relevant_to_polri)]
 
     if df.empty:
-        st.warning("⚠️ Tidak ada data relevan dengan Polri setelah filter.")
-        return df
+        return pd.DataFrame()
 
-    # Labeling
-    st.write("🏷️ Melakukan labeling (positif / negatif)...")
-    df['sentiment'] = df['cleaned_text'].progress_apply(
+    df["sentiment"] = df["cleaned_text"].progress_apply(
         lambda x: label_sentiment_two_class(x, pos_lex, neg_lex)
     )
-
-    st.success(f"✅ Labeling selesai: {df['sentiment'].value_counts().to_dict()}")
-    return df[['cleaned_text', 'sentiment']]
+    return df[["cleaned_text", "sentiment"]]
 
 # ==============================================================================
-# 🔹 TF-IDF + Model Naive Bayes & SVM
+# 🔹 Model Training + Visualisasi
 # ==============================================================================
-def train_models(df, max_features=7000, test_size=0.3):
-    X = df['cleaned_text']
-    y = df['sentiment']
+def train_models(df, max_features=5000, test_size=0.3):
+    X, y = df["cleaned_text"], df["sentiment"]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, stratify=y, random_state=42
     )
 
-    vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2), sublinear_tf=True)
+    vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1,2))
     X_train_tfidf = vectorizer.fit_transform(X_train)
     X_test_tfidf = vectorizer.transform(X_test)
 
-    nb = MultinomialNB(alpha=0.2)
+    # NB
+    nb = MultinomialNB(alpha=0.3)
     nb.fit(X_train_tfidf, y_train)
     nb_pred = nb.predict(X_test_tfidf)
-    nb_acc = accuracy_score(y_test, nb_pred)
 
-    svm = SVC(kernel='linear', random_state=42)
+    # SVM
+    svm = SVC(kernel="linear", probability=True, random_state=42)
     svm.fit(X_train_tfidf, y_train)
     svm_pred = svm.predict(X_test_tfidf)
-    svm_acc = accuracy_score(y_test, svm_pred)
 
-    results = {
-        'nb_acc': nb_acc,
-        'svm_acc': svm_acc,
-        'nb_report': classification_report(y_test, nb_pred, output_dict=True),
-        'svm_report': classification_report(y_test, svm_pred, output_dict=True)
+    # Laporan
+    nb_report = classification_report(y_test, nb_pred, output_dict=True)
+    svm_report = classification_report(y_test, svm_pred, output_dict=True)
+
+    return {
+        "vectorizer": vectorizer,
+        "nb": nb,
+        "svm": svm,
+        "X_test": X_test,
+        "y_test": y_test,
+        "nb_pred": nb_pred,
+        "svm_pred": svm_pred,
+        "nb_report": nb_report,
+        "svm_report": svm_report
     }
 
-    return results
+def show_confusion(y_test, preds, model_name):
+    cm = confusion_matrix(y_test, preds, labels=["positif","negatif"])
+    fig, ax = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=["Positif","Negatif"], yticklabels=["Positif","Negatif"])
+    ax.set_title(f"Confusion Matrix - {model_name}")
+    st.pyplot(fig)
+
+def show_wordcloud(df):
+    for label, color in [("positif","Greens"),("negatif","Reds")]:
+        text = " ".join(df[df["sentiment"]==label]["cleaned_text"].values)
+        if not text.strip():
+            continue
+        wc = WordCloud(width=800,height=400,background_color="white",
+                       colormap=color,stopwords=stopword_set).generate(text)
+        st.image(wc.to_array(), caption=f"WordCloud - {label.capitalize()}")
 
 # ==============================================================================
 # 🔹 Analisis teks tunggal
@@ -137,88 +174,56 @@ def analyze_single_text(text, pos_lex, neg_lex):
     return sentiment, cleaned
 
 # ==============================================================================
-# 🔹 Load Leksikon InSet
+# 🔹 UI
 # ==============================================================================
-@st.cache_resource
-def load_inset_lexicons():
-    pos_url = 'https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv'
-    neg_url = 'https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv'
-    pos = set(pd.read_csv(pos_url, sep='\t', header=None)[0].dropna().astype(str))
-    neg = set(pd.read_csv(neg_url, sep='\t', header=None)[0].dropna().astype(str))
-    st.success(f"Leksikon dimuat: {len(pos)} positif, {len(neg)} negatif")
-    return pos, neg
+tab1, tab2 = st.tabs(["📂 Analisis File CSV", "⌨️ Analisis Cepat Teks Tunggal"])
 
-# ==============================================================================
-# 🔹 UI STREAMLIT
-# ==============================================================================
-st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
-st.title("📊 Analisis Sentimen Polri (Lexicon + Machine Learning)")
-st.markdown("""
-Pipeline: **Preprocessing (dengan filter Polri)** → Labeling (2 kelas) → TF-IDF → NB & SVM
-
-Aplikasi ini memiliki dua mode:
-1️⃣ Upload File CSV  
-2️⃣ Input Teks Langsung
-""")
-
-pos_lex, neg_lex = load_inset_lexicons()
-
-tab1, tab2 = st.tabs(["📂 Analisis File CSV", "⌨️ Analisis Teks Input"])
-
-# ==============================================================================
-# 🟦 TAB 1 — UPLOAD FILE
-# ==============================================================================
+# ---------------- TAB 1 ----------------
 with tab1:
-    uploaded_file = st.file_uploader("Unggah file CSV", type=['csv'])
+    uploaded = st.file_uploader("Unggah Dataset CSV", type=["csv"])
+    test_size = st.slider("Pilih Test Size (Data Uji)", 0.1, 0.5, 0.3, step=0.05)
+    max_feat = st.slider("Max Features TF-IDF", 1000, 10000, 5000, step=1000)
 
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        st.success(f"File diunggah: {uploaded_file.name} ({len(df)} baris)")
-
-        text_col = st.selectbox("📝 Pilih kolom teks:", df.columns.tolist())
-
+    if uploaded:
+        df = pd.read_csv(uploaded)
+        text_col = st.selectbox("Pilih Kolom Teks", df.columns.tolist())
         if st.button("🚀 Jalankan Analisis File"):
-            with st.spinner("Memproses data..."):
-                df_processed = preprocess_and_label(df, text_col, pos_lex, neg_lex)
-
+            df_processed = preprocess_and_label(df, text_col, pos_lex, neg_lex)
             if not df_processed.empty:
+                st.subheader("📄 Hasil Preprocessing & Labeling")
                 st.dataframe(df_processed.head(10))
-                st.bar_chart(df_processed['sentiment'].value_counts())
+                st.bar_chart(df_processed["sentiment"].value_counts())
 
-                with st.spinner("🔢 Melatih model ML..."):
-                    results = train_models(df_processed)
+                st.subheader("📊 WordCloud Sentimen")
+                show_wordcloud(df_processed)
 
-                st.success(f"✅ Akurasi NB: {results['nb_acc']:.2%} | SVM: {results['svm_acc']:.2%}")
+                st.subheader("🤖 Pelatihan Model (NB & SVM)")
+                results = train_models(df_processed, max_feat, test_size)
 
-                csv_data = df_processed.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Unduh Hasil CSV", csv_data, "hasil_sentimen_polri.csv", "text/csv")
+                # Akurasi
+                nb_acc = accuracy_score(results["y_test"], results["nb_pred"])
+                svm_acc = accuracy_score(results["y_test"], results["svm_pred"])
+                st.metric("Akurasi Naive Bayes", f"{nb_acc*100:.2f}%")
+                st.metric("Akurasi SVM", f"{svm_acc*100:.2f}%")
 
-            else:
-                st.warning("Tidak ada data relevan dengan Polri setelah filter.")
-    else:
-        st.info("Unggah file CSV untuk memulai.")
+                # Confusion Matrix
+                col1, col2 = st.columns(2)
+                with col1:
+                    show_confusion(results["y_test"], results["nb_pred"], "Naive Bayes")
+                with col2:
+                    show_confusion(results["y_test"], results["svm_pred"], "SVM")
 
-# ==============================================================================
-# 🟩 TAB 2 — INPUT TEKS
-# ==============================================================================
-with tab2:
-    st.subheader("Analisis Cepat Teks Tunggal")
-    input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
+                # Laporan
+                st.subheader("📈 Laporan Evaluasi")
+                st.write("**Naive Bayes**")
+                st.dataframe(pd.DataFrame(results["nb_report"]).transpose())
+                st.write("**SVM**")
+                st.dataframe(pd.DataFrame(results["svm_report"]).transpose())
 
-    if st.button("🔍 Analisis Teks Ini"):
-        if input_text.strip():
-            with st.spinner("Menganalisis teks..."):
-                sentiment, cleaned = analyze_single_text(input_text, pos_lex, neg_lex)
-
-            st.write("**Teks Setelah Preprocessing:**")
-            st.info(cleaned)
-
-            st.write("**Hasil Sentimen:**")
-            if sentiment == "positif":
-                st.success("✅ Positif 😊")
-            elif sentiment == "negatif":
-                st.error("❌ Negatif 😠")
-            else:
-                st.warning("⚠️ Tidak relevan dengan Polri.")
-        else:
-            st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
+                # Unduh hasil
+                st.download_button(
+                    "📥 Unduh Hasil Labeling CSV",
+                    df_processed.to_csv(index=False).encode("utf-8"),
+                    "hasil_sentimen_polri.csv",
+                    "text/csv"
+                )
