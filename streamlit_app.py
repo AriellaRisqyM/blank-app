@@ -515,22 +515,36 @@ with tab1:
 # ==============================================================================
 with tab2:
     st.subheader("💬 Analisis Cepat Teks Tunggal")
+    # Tambahkan info bahwa ini untuk umum
+    st.info("Fitur ini menganalisis sentimen teks apapun menggunakan leksikon yang dimuat.")
     input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
+    
     if st.button("🔍 Analisis Teks Ini"):
-        if input_text.strip():
+        if input_text and input_text.strip():
+            # 1. Preprocess (Cleaning)
             cleaned = preprocess_text(input_text)
-            if not is_relevant_to_polri(cleaned):
-                st.warning("⚠️ Teks tidak relevan dengan Polri.")
+            
+            # 2. Case Folding (Penting untuk leksikon)
+            cleaned_lower = cleaned.lower()
+
+            # Cek jika teks kosong SETELAH preprocessing
+            if not cleaned_lower.strip():
+                st.warning("⚠️ Teks menjadi kosong setelah preprocessing.")
             else:
-                sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
-                st.info(f"Teks setelah preprocessing:\n{cleaned}")
+                # 3. Filter 'is_relevant_to_polri' DIHAPUS
+                
+                # 4. Langsung lakukan pelabelan pada teks lowercase
+                sentiment = label_sentiment_two_class(cleaned_lower, pos_lex, neg_lex)
+                
+                st.info(f"Teks setelah preprocessing:\n{cleaned}") # Tampilkan teks hasil cleaning
+                
+                st.write("**Hasil Sentimen:**")
                 if sentiment == "positif":
                     st.success("✅ Sentimen: POSITIF 😊")
-                else:
+                else: # Otomatis 'negatif' karena fungsi label_sentiment_two_class hanya punya 2 output
                     st.error("❌ Sentimen: NEGATIF 😠")
         else:
             st.warning("Masukkan teks terlebih dahulu.")
-
 # --- Footer ---
 st.markdown("---")
 st.markdown("Aplikasi Analisis Sentimen Polri")
