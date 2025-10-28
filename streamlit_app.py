@@ -1,50 +1,126 @@
 # =====================================================================
-# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL 2 KELAS
+# STREAMLIT: Analisis Sentimen Polri (DISESUAIKAN DENGAN IPYNB)
 # =====================================================================
 import streamlit as st
 import pandas as pd
 import requests
 import re
 import json
-import io # Diperlukan untuk membaca data dari requests
+import io 
 import matplotlib.pyplot as plt
 import seaborn as sns
 from wordcloud import WordCloud
 from tqdm.auto import tqdm
+import nltk # Diperlukan
+from nltk.tokenize import word_tokenize # Diperlukan
+from Sastrawi.Stemmer.StemmerFactory import StemmerFactory # Diperlukan
+from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory # Diperlukan
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.svm import SVC
+from sklearn.svm import LinearSVC # Diubah dari SVC ke LinearSVC
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+import warnings
 
 # Inisialisasi tqdm untuk pandas
 tqdm.pandas()
 
-# Konfigurasi Halaman (Harus jadi perintah streamlit pertama)
-st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
-st.title("📊 Analisis Sentimen Polri (Lexicon + ML) — 2 Kelas")
+# Mengabaikan warning
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=UserWarning)
+
+# Konfigurasi Halaman
+st.set_page_config(page_title="Analisis Sentimen Polri (IPYNB)", layout="wide")
+st.title("📊 Analisis Sentimen Polri (Logika IPYNB)")
 
 # =====================================================================
-# 1. PREPROCESSING & FILTER
+# 0. FUNGSI CACHE (Untuk memuat model & kamus yang berat)
 # =====================================================================
-def preprocess_text(text):
-    """Membersihkan teks: hapus URL, mention, hashtag (#), karakter non-alfabet."""
+
+@st.cache_resource
+def load_nltk_punkt():
+    """Memastikan NLTK Punkt diunduh."""
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:
+        st.info("Mengunduh NLTK 'punkt' tokenizer...")
+        nltk.download('punkt')
+        st.info("Unduhan 'punkt' selesai.")
+
+@st.cache_resource
+def get_stemmer():
+    """Memuat Sastrawi Stemmer (lambat)."""
+    st.info("Memuat Sastrawi Stemmer (hanya sekali)...")
+    factory = StemmerFactory()
+    return factory.create_stemmer()
+
+@st.cache_resource
+def get_stopwords():
+    """Memuat gabungan stopwords (Sastrawi + Online)."""
+    st.info("Memuat kamus Stopwords (hanya sekali)...")
+    stop_words_sastrawi = set()
+    stop_words_kamus = set()
+    try:
+        factory = StopWordRemoverFactory()
+        stop_words_sastrawi = set(factory.get_stop_words())
+    except Exception as e:
+        st.warning(f"Gagal memuat Sastrawi Stopwords: {e}")
+    
+    url_stopwords = 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/masdevid_id-stopwords/id.stopwords.02.01.2016.txt'
+    try:
+        response = requests.get(url_stopwords)
+        response.raise_for_status()
+        stop_words_kamus = set(response.text.splitlines())
+    except Exception as e:
+        st.warning(f"Gagal memuat stopwords online: {e}")
+        
+    stop_words = stop_words_sastrawi.union(stop_words_kamus)
+    st.info(f"Total {len(stop_words)} stopwords gabungan dimuat.")
+    return stop_words
+
+@st.cache_resource
+def get_slang_dict():
+    """Memuat kamus normalisasi (alay)."""
+    st.info("Memuat kamus Normalisasi (hanya sekali)...")
+    url_kamus = 'https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/nasalsabila_kamus-alay/_json_colloquial-indonesian-lexicon.txt'
+    kamus_normalisasi = {}
+    try:
+        response = requests.get(url_kamus)
+        response.raise_for_status()
+        kamus_normalisasi = response.json()
+        st.info(f"Berhasil memuat {len(kamus_normalisasi)} kata dari kamus normalisasi.")
+    except requests.exceptions.RequestException as e:
+        st.error(f"Gagal memuat kamus normalisasi dari URL: {e}")
+    return kamus_normalisasi
+
+# Muat semua resource saat aplikasi dimulai
+load_nltk_punkt()
+stemmer = get_stemmer()
+stop_words = get_stopwords()
+kamus_normalisasi = get_slang_dict()
+
+# =====================================================================
+# 1. PREPROCESSING & FILTER (Fungsi Sesuai IPYNB)
+# =====================================================================
+
+def research_safe_clean_text(text):
+    """
+    Cleaning versi IPYNB (mengganti karakter spesial dengan spasi).
+    """
     if not isinstance(text, str):
         return ""
-    text = re.sub(r"http\S+", "", text)
-    text = re.sub(r"@\w+", "", text)
-    text = re.sub(r"#", " ", text) # Simpan kata dari hashtag
-    text = re.sub(r"[^a-zA-Z\s]", "", text) # Hanya alfabet dan spasi
-    text = re.sub(r"\s+", " ", text).strip() # Hapus spasi berlebih
-    # Case folding (lowercase) akan dilakukan nanti
+    text = re.sub(r'#', ' ', text)
+    text = re.sub(r'http\S+', '', text)
+    text = re.sub(r'@\w+', '', text)
+    text = re.sub(r'[^a-zA-Z\s]', ' ', text) # Ganti dengan spasi (BEDA DARI STREAMLIT ASLI)
+    text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 def is_relevant_to_polri(text_lower):
     """
     Mengecek relevansi teks (yang sudah lowercase) dengan keyword Polri
-    dan mengecualikan keyword TNI.
+    dan mengecualikan keyword TNI. (Versi LENGKAP dari Streamlit/IPYNB baru)
     """
-    # Daftar keyword Polri
     keywords_polri = [
         "polri", "kepolisian", "mabes polri", "polda", "polres", "polsek", "polrestabes", "polresta",
         "brimob", "korbrimob", "gegana", "pelopor", "bareskrim", "ditreskrimum", "ditreskrimsus",
@@ -57,7 +133,6 @@ def is_relevant_to_polri(text_lower):
         "akbp", "kompol", "akp", "iptu", "ipda", "aiptu", "aipda", "bripka", "brigpol",
         "brigadir", "briptu", "bripda", "bharada", "bharatu", "bharaka"
     ]
-    # Daftar keyword TNI (Eksklusi)
     exclude_keywords = [
         "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
         "kodam", "korem", "kodim", "koramil", "kostrad", "pangkostrad", "divif", "kopassus",
@@ -75,117 +150,174 @@ def is_relevant_to_polri(text_lower):
     return bool(re.search(pattern_polri, text_lower)) and not re.search(pattern_exclude, text_lower)
 
 # =====================================================================
-# 2. LOAD LEXICON POSITIF & NEGATIF (GABUNGAN)
+# 2. LOAD LEXICON POSITIF & NEGATIF (Hanya Fajri91)
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
-    """Memuat leksikon InSet (1 sumber).""" # --- PERUBAHAN ---
-    st.info("📚 Memuat kamus positif & negatif...")
+    """Memuat leksikon InSet (HANYA fajri91)."""
+    st.info("📚 Memuat kamus positif & negatif (fajri91)...")
     urls = {
         "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
         "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
-        # --- DINONAKTIFKAN ---
-        # "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
-        # "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv",
     }
-
     pos_lex = set()
     neg_lex = set()
-
     try:
-        # Muat fajri91 (header=None, kolom 0)
         pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_pos"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_neg"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        st.info("    -> OK: Leksikon fajri91 dimuat.")
+        st.success(f"✅ Leksikon dimuat: {len(pos_lex)} pos, {len(neg_lex)} neg.")
     except Exception as e:
-        st.warning(f"⚠️ Gagal memuat leksikon fajri91: {e}")
-
-    # --- DINONAKTIFKAN ---
-    # try:
-    #     # Muat onpilot (header=0, kolom 'word')
-    #     pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_pos"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-    #     neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_neg"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-    #     st.info("    -> OK: Leksikon onpilot dimuat.")
-    # except Exception as e:
-    #     st.warning(f"⚠️ Gagal memuat leksikon onpilot: {e}")
-    # --- AKHIR BLOK DINONAKTIFKAN ---
-
-    st.success(f"✅ Leksikon dimuat: {len(pos_lex)} kata positif unik, {len(neg_lex)} kata negatif unik.")
+        st.error(f"⚠️ Gagal memuat leksikon fajri91: {e}")
     return pos_lex, neg_lex
 
 # Muat leksikon saat aplikasi dimulai
 pos_lex, neg_lex = load_lexicons()
 
 # =====================================================================
-# 3. LABEL SENTIMEN (Hanya Positif & Negatif - Logika Disederhanakan)
+# 3. LABEL SENTIMEN (Logika IPYNB: pos >= neg)
 # =====================================================================
-def label_sentiment_two_class(text_lower, pos_lex, neg_lex):
+def label_sentiment_two_class(tokens, pos_lex, neg_lex): # Diubah: input adalah tokens
     """
-    Memberi label Positif/Negatif berdasarkan jumlah kata (input sudah lowercase).
-    Default ke negatif jika skor 0 atau negatif.
+    Memberi label Positif/Negatif berdasarkan jumlah kata (input adalah list token).
+    Logika IPYNB: Jika positif >= negatif -> positif, selain itu negatif.
     """
-    if not text_lower.strip():
-        return 'negatif' # Default jika teks kosong
+    if not isinstance(tokens, list):
+        return 'negatif' # Default jika input bukan list
 
-    tokens = text_lower.split()
+    # tokens = text_lower.split() # Dihapus, input sudah tokens
     pos = sum(1 for t in tokens if t in pos_lex)
     neg = sum(1 for t in tokens if t in neg_lex)
 
-    # Logika 2 Kelas: Jika positif > negatif -> positif, selain itu negatif
-    if pos > neg:
+    # Logika 2 Kelas IPYNB
+    if pos >= neg: # Diubah dari > menjadi >=
         return "positif"
     else:
         return "negatif"
 
 # =====================================================================
-# 4. PREPROCESS + FILTER + LABEL (Fungsi Terpadu)
+# 4. FUNGSI HELPER PIPELINE (Sesuai IPYNB)
 # =====================================================================
-@st.cache_data(show_spinner=False) # Spinner dikontrol manual
-def preprocess_and_label(_df, text_col, _pos_lex, _neg_lex):
-    """Menerapkan cleaning, case folding, filter Polri, dan labeling lexicon 2 kelas."""
-    st.info("Memulai preprocessing, filter, & pelabelan...")
+
+def normalize_tokens(tokens, kamus):
+    if not isinstance(tokens, list): return []
+    return [kamus.get(word, word) for word in tokens]
+
+def remove_stopwords(tokens, stop):
+    if not isinstance(tokens, list): return []
+    return [word for word in tokens if word not in stop]
+
+def research_safe_stemming(tokens, stemmer_obj):
+    if not isinstance(tokens, list): return []
+    if stemmer_obj is None: return tokens
+    try:
+        stemmed_list = [stemmer_obj.stem(token) for token in tokens]
+        return [word for word in stemmed_list if word]
+    except Exception as e:
+        st.warning(f"Error saat stemming: {e}")
+        return tokens
+
+# =====================================================================
+# 5. PREPROCESS + FILTER + LABEL (Fungsi Terpadu - Sesuai IPYNB)
+# =====================================================================
+@st.cache_data(show_spinner=False)
+def preprocess_and_label(_df, text_col, _pos_lex, _neg_lex, _kamus_norm, _stop_words, _stemmer):
+    """Menerapkan pipeline preprocessing LENGKAP dari IPYNB."""
+    st.info("Memulai preprocessing, filter, & pelabelan (Alur IPYNB)...")
     df_processed = _df.copy()
     total_awal = len(df_processed)
+    
+    # Inisialisasi progress bar
     progress_bar = st.progress(0, text="Memulai...")
+    total_steps = 7 # Total langkah
+    current_step = 0
 
-    # Langkah 1: Preprocessing (Clean + Case Fold)
-    progress_bar.progress(1/3, text="1/3 Preprocessing (Clean & Case Fold)...")
-    df_processed['cleaned_text'] = df_processed[text_col].astype(str).progress_apply(preprocess_text)
+    def update_progress(text):
+        nonlocal current_step
+        current_step += 1
+        progress_bar.progress(current_step / total_steps, text=f"{current_step}/{total_steps} {text}...")
+
+    # Langkah 1: Cleaning (research_safe_clean_text)
+    update_progress("Cleaning (Research Safe)")
+    df_processed['cleaned_text'] = df_processed[text_col].astype(str).progress_apply(research_safe_clean_text)
     df_processed.dropna(subset=['cleaned_text'], inplace=True)
     df_processed = df_processed[df_processed['cleaned_text'].str.strip().astype(bool)]
-    df_processed['case_folded_text'] = df_processed['cleaned_text'].str.lower()
     if df_processed.empty:
         st.warning("Tidak ada teks valid setelah cleaning.")
         progress_bar.empty()
-        return pd.DataFrame(), total_awal, 0, 0
+        return pd.DataFrame(), total_awal, 0, 0, 0, 0, 0, 0
 
-    # Langkah 2: Filter Polri (Input 'case_folded_text')
-    progress_bar.progress(2/3, text="2/3 Memfilter data Polri...")
-    df_filtered = df_processed[df_processed["case_folded_text"].progress_apply(is_relevant_to_polri)].copy()
+    # Langkah 2: De-duplikasi 'cleaned_text'
+    rows_before_dedup = len(df_processed)
+    df_processed.drop_duplicates(subset=['cleaned_text'], inplace=True)
+    rows_after_dedup = len(df_processed)
+    st.write(f"De-duplikasi 'cleaned_text': {rows_before_dedup - rows_after_dedup} duplikat dihapus.")
+    df_processed = df_processed.reset_index(drop=True)
+
+    # Langkah 3: Case Folding
+    update_progress("Case Folding")
+    df_processed['case_folded_text'] = df_processed['cleaned_text'].str.lower()
+
+    # Langkah 4: Filter Polri (Keyword Lengkap)
+    update_progress("Memfilter data Polri")
+    mask_polri = df_processed["case_folded_text"].progress_apply(is_relevant_to_polri)
+    df_filtered = df_processed[mask_polri].copy()
+    df_filtered = df_filtered.reset_index(drop=True)
     total_filtered = len(df_filtered)
     if df_filtered.empty:
         st.warning("Tidak ada data relevan dengan Polri setelah filter.")
         progress_bar.empty()
-        return pd.DataFrame(), total_awal, total_filtered, 0
+        return pd.DataFrame(), total_awal, rows_after_dedup, total_filtered, 0, 0, 0, 0
+    
+    # --- Mulai Preprocessing Detail ---
+    
+    # Langkah 5: Tokenizing (NLTK)
+    update_progress("Tokenizing (NLTK)")
+    df_filtered['tokenized_text'] = df_filtered['case_folded_text'].progress_apply(word_tokenize)
+    total_tokenized = len(df_filtered)
 
-    # Langkah 3: Labeling (pada 'case_folded_text' yang sudah difilter)
-    progress_bar.progress(3/3, text="3/3 Pelabelan Sentimen (Lexicon)...")
-    df_filtered["sentiment"] = df_filtered["case_folded_text"].progress_apply(
+    # Langkah 6: Normalization (Kamus Alay)
+    update_progress("Normalization (Kamus Alay)")
+    df_filtered['normalized_text'] = df_filtered['tokenized_text'].progress_apply(lambda x: normalize_tokens(x, _kamus_norm))
+    total_normalized = len(df_filtered)
+    
+    # Langkah 7: Stopword Removal
+    update_progress("Stopword Removal")
+    df_filtered['stopwords_removed'] = df_filtered['normalized_text'].progress_apply(lambda x: remove_stopwords(x, _stop_words))
+    total_stopwords = len(df_filtered)
+    
+    # Langkah 8: Stemming
+    update_progress("Stemming (Sastrawi)")
+    df_filtered['stemmed_tokens'] = df_filtered['stopwords_removed'].progress_apply(lambda x: research_safe_stemming(x, _stemmer))
+    total_stemmed = len(df_filtered)
+    
+    # Langkah 9: Labeling (Input: stemmed_tokens)
+    update_progress("Pelabelan Sentimen (Lexicon)")
+    df_filtered["sentiment"] = df_filtered["stemmed_tokens"].progress_apply( # Input diubah
         lambda x: label_sentiment_two_class(x, _pos_lex, _neg_lex)
     )
     total_label = len(df_filtered)
     progress_bar.empty()
 
-    st.success("Preprocessing, Filter, & Pelabelan Selesai.")
-    return df_filtered[["cleaned_text", "case_folded_text", "sentiment"]], total_awal, total_filtered, total_label
+    st.success("Preprocessing, Filter, & Pelabelan Selesai (Alur IPYNB).")
+    
+    # Mengembalikan dataframe lengkap dan statistik
+    return df_filtered, total_awal, rows_after_dedup, total_filtered, total_tokenized, total_normalized, total_stopwords, total_stemmed, total_label
 
 # =====================================================================
-# 5. TRAIN MODEL + TF-IDF + EVALUASI
+# 6. TRAIN MODEL + TF-IDF (Sesuai IPYNB)
 # =====================================================================
-@st.cache_data(show_spinner=False) # Cache hasil model
-def train_models(_df_processed, max_features=5000, test_size=0.3):
-    """Melatih Naive Bayes dan SVM (Linear) menggunakan TF-IDF."""
-    st.info(f"Memulai pelatihan model (Test Size: {test_size:.0%}, Max Features: {max_features})...")
+@st.cache_data(show_spinner=False)
+def train_models(_df_processed): # Dihapus: max_features, test_size
+    """Melatih Naive Bayes dan LinearSVC menggunakan TF-IDF (Sesuai IPYNB)."""
+    
+    # --- Parameter Hardcoded Sesuai IPYNB ---
+    TEST_SIZE = 0.2
+    MAX_FEATURES = 5000
+    RANDOM_STATE = 42
+    # ----------------------------------------
+
+    st.info(f"Memulai pelatihan model (Test Size: {TEST_SIZE:.0%}, Max Features: {MAX_FEATURES})...")
+    
     if _df_processed.empty or 'sentiment' not in _df_processed.columns:
          st.error("Data yang diproses kosong atau tidak memiliki kolom 'sentiment'.")
          return None
@@ -193,20 +325,22 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
          st.error("Hanya ditemukan 1 kelas sentimen. Tidak dapat melatih model.")
          return None
 
+    # Input TF-IDF adalah 'case_folded_text' (Sesuai IPYNB Sel 13)
     X, y = _df_processed["case_folded_text"], _df_processed["sentiment"]
     labels = sorted(y.unique())
 
     try:
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, stratify=y, random_state=42
+            X, y, test_size=TEST_SIZE, stratify=y, random_state=RANDOM_STATE
         )
         st.write(f"Data dibagi: {len(X_train)} train, {len(X_test)} test")
     except ValueError as e:
         st.error(f"Gagal membagi data (mungkin data terlalu sedikit): {e}")
         return None
 
-    st.write(f"Membuat fitur TF-IDF (max_features={max_features}, ngram=1-2)...")
-    vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2), sublinear_tf=True)
+    st.write(f"Membuat fitur TF-IDF (max_features={MAX_FEATURES}, ngram=1-2)...")
+    # Parameter TF-IDF dari IPYNB (sublinear_tf=True Dihapus)
+    vectorizer = TfidfVectorizer(max_features=MAX_FEATURES, ngram_range=(1, 2)) 
     try:
         X_train_tfidf = vectorizer.fit_transform(X_train)
         X_test_tfidf = vectorizer.transform(X_test)
@@ -216,7 +350,7 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
     results = {"labels": labels}
 
     st.write("Melatih Naive Bayes...")
-    nb = MultinomialNB(alpha=0.3)
+    nb = MultinomialNB() # Parameter default (alpha=1.0) sesuai IPYNB
     nb.fit(X_train_tfidf, y_train)
     nb_pred = nb.predict(X_test_tfidf)
     nb_acc = accuracy_score(y_test, nb_pred)
@@ -224,14 +358,14 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
     results['nb'] = {'acc': nb_acc, 'report': nb_report, 'model': nb, 'preds': nb_pred}
     st.write(f"Akurasi Naive Bayes: {nb_acc*100:.2f}%")
 
-    st.write("Melatih SVM (Linear)...")
-    svm = SVC(kernel="linear", probability=True, random_state=42)
+    st.write("Melatih SVM (LinearSVC)...")
+    svm = LinearSVC(random_state=RANDOM_STATE) # Diubah ke LinearSVC
     svm.fit(X_train_tfidf, y_train)
     svm_pred = svm.predict(X_test_tfidf)
     svm_acc = accuracy_score(y_test, svm_pred)
     svm_report = classification_report(y_test, svm_pred, labels=labels, output_dict=True, zero_division=0)
     results['svm'] = {'acc': svm_acc, 'report': svm_report, 'model': svm, 'preds': svm_pred}
-    st.write(f"Akurasi SVM: {svm_acc*100:.2f}%")
+    st.write(f"Akurasi SVM (LinearSVC): {svm_acc*100:.2f}%")
 
     results.update({
         "vectorizer": vectorizer, "X_train": X_train, "X_test": X_test,
@@ -242,7 +376,7 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
     return results
 
 # =====================================================================
-# 6. VISUALISASI
+# 7. VISUALISASI (Fungsi show_metric_comparison dihapus)
 # =====================================================================
 def show_confusion(y_test, preds, model_name, labels):
     """Menampilkan confusion matrix."""
@@ -259,7 +393,7 @@ def show_confusion(y_test, preds, model_name, labels):
     st.pyplot(fig)
 
 def show_wordcloud(_df):
-    """Menampilkan word cloud untuk sentimen positif dan negatif."""
+    """Menampilkan word cloud (input 'case_folded_text' sesuai IPYNB)."""
     st.header("🌈 Tahap 3: WordCloud Sentimen")
     col1, col2 = st.columns(2)
     with col1:
@@ -267,7 +401,6 @@ def show_wordcloud(_df):
         text_pos = " ".join(_df[_df["sentiment"] == "positif"]["case_folded_text"].values)
         if text_pos.strip():
             try:
-                # Ganti use_column_width dengan use_container_width
                 wc_pos = WordCloud(width=600, height=300, background_color="white", colormap="Greens").generate(text_pos)
                 st.image(wc_pos.to_array(), use_container_width=True) 
             except Exception as e:
@@ -279,7 +412,6 @@ def show_wordcloud(_df):
         text_neg = " ".join(_df[_df["sentiment"] == "negatif"]["case_folded_text"].values)
         if text_neg.strip():
             try:
-                # Ganti use_column_width dengan use_container_width
                 wc_neg = WordCloud(width=600, height=300, background_color="white", colormap="Reds").generate(text_neg)
                 st.image(wc_neg.to_array(), use_container_width=True) 
             except Exception as e:
@@ -287,58 +419,55 @@ def show_wordcloud(_df):
         else:
             st.write("Tidak ada data negatif untuk word cloud.")
 
-
-def show_metric_comparison(nb_report, svm_report):
-    """Menampilkan bar chart perbandingan metrik (weighted avg)."""
-    metrics = ["precision", "recall", "f1-score"]
-    values = {
-        "Naive Bayes": [nb_report.get("weighted avg", {}).get(m, 0) for m in metrics],
-        "SVM": [svm_report.get("weighted avg", {}).get(m, 0) for m in metrics]
-    }
-    df_metrics = pd.DataFrame(values, index=metrics)
-    st.bar_chart(df_metrics)
-
 # =====================================================================
-# 7. ANALISIS TEKS TUNGGAL (UNTUK TAB 2)
+# 8. ANALISIS TEKS TUNGGAL (TAB 2 - Disesuaikan ke Alur IPYNB)
 # =====================================================================
-def analyze_single_text(text, positive_lexicon, negative_lexicon):
+def analyze_single_text(text, positive_lexicon, negative_lexicon, _kamus_norm, _stop_words, _stemmer):
     """
-    Analisis cepat untuk input teks tunggal.
-    Menerapkan: clean -> lower -> (TANPA FILTER) -> label
+    Analisis cepat teks tunggal (Alur Preprocessing LENGKAP IPYNB).
     """
     if not text or not text.strip():
-        return "tidak valid", "" # Kasus input kosong
+        return "tidak valid", "" 
 
-    text_clean = preprocess_text(text)
+    # 1. Clean (Research Safe)
+    text_clean = research_safe_clean_text(text)
     if not text_clean:
-         return "tidak valid", "" # Kasus kosong setelah cleaning
+        return "tidak valid", "" 
 
-    text_lower = text_clean.lower() # Case folding untuk labeling
+    # 2. Lower
+    text_lower = text_clean.lower()
+    
+    # 3. Tokenize (NLTK)
+    tokens = word_tokenize(text_lower)
+    
+    # 4. Normalize
+    tokens = normalize_tokens(tokens, _kamus_norm)
+    
+    # 5. Stopword Removal
+    tokens = remove_stopwords(tokens, _stop_words)
+    
+    # 6. Stemming
+    tokens = research_safe_stemming(tokens, _stemmer)
 
-    # --- Filter Polri DIHAPUS ---
-    # if not is_relevant_to_polri(text_lower):
-    #     return "tidak relevan", text_clean 
-
-    # Langsung lakukan pelabelan
-    sentiment = label_sentiment_two_class(text_lower, positive_lexicon, negative_lexicon)
+    # 7. Label (Logika IPYNB: >=)
+    sentiment = label_sentiment_two_class(tokens, positive_lexicon, negative_lexicon)
     return sentiment, text_clean # Kembalikan teks cleaned asli
 
 # =====================================================================
-# 8. UI: FILE CSV & TEKS TUNGGAL
+# 9. UI: FILE CSV & TEKS TUNGGAL
 # =====================================================================
 # State management
 if 'processed_df' not in st.session_state: st.session_state.processed_df = None
 if 'ml_results' not in st.session_state: st.session_state.ml_results = None
 if 'current_filename' not in st.session_state: st.session_state.current_filename = ""
 
-tab1, tab2 = st.tabs(["📂 Analisis File CSV (Filter Polri)", "⌨️ Analisis Teks Umum"]) # Judul Tab 2 diubah
+tab1, tab2 = st.tabs(["📂 Analisis File CSV (Filter Polri)", "⌨️ Analisis Teks Umum"])
 
 with tab1:
     st.header("Analisis Sentimen dari File CSV (Filter Polri)")
-    st.info("Tab ini akan memfilter data dan hanya menganalisis teks yang relevan dengan Polri.")
+    st.info("Tab ini akan memfilter data dan hanya menganalisis teks yang relevan dengan Polri (menggunakan alur IPYNB).")
     uploaded = st.file_uploader("Unggah Dataset CSV", type=["csv"], label_visibility="collapsed")
     
-    # Reset state jika file baru
     if uploaded and uploaded.name != st.session_state.current_filename:
         st.session_state.processed_df = None
         st.session_state.ml_results = None
@@ -347,130 +476,108 @@ with tab1:
 
     if uploaded:
         try:
-            # Baca file
             with st.spinner(f"Membaca {uploaded.name}..."):
                 try: df_input = pd.read_csv(uploaded)
                 except UnicodeDecodeError: uploaded.seek(0); df_input = pd.read_csv(uploaded, encoding='latin1')
-            st.success(f"File berhasil diunggah: {uploaded.name} ({len(df_input)} baris)")
+            
+            # (Tambahan: dedupe raw 'full_text' seperti di IPYNB Sel 3)
+            if 'full_text' in df_input.columns:
+                 df_input.dropna(subset=['full_text'], inplace=True)
+                 df_input.drop_duplicates(subset=['full_text'], inplace=True)
+                 df_input = df_input.reset_index(drop=True)
+            
+            st.success(f"File berhasil diunggah: {uploaded.name} ({len(df_input)} baris setelah de-dup awal)")
             st.dataframe(df_input.head(), hide_index=True)
 
-            # Pilih kolom
             available_columns = [""] + df_input.columns.tolist()
             col_index = 0
             if 'selectbox_column' in st.session_state and st.session_state.selectbox_column in available_columns:
                 col_index = available_columns.index(st.session_state.selectbox_column)
-            text_col = st.selectbox("Pilih Kolom Teks:", available_columns, index=col_index, key="selectbox_column_tab1") # Key unik
+            text_col = st.selectbox("Pilih Kolom Teks:", available_columns, index=col_index, key="selectbox_column_tab1")
 
             if text_col:
                 st.info(f"Kolom teks yang dipilih: **{text_col}**")
                 
-                # Tombol Proses
-                if st.button("🚀 1. Jalankan Preprocessing, Filter & Labeling", key="btn_process"):
-                    st.session_state.processed_df = None # Reset
+                if st.button("🚀 1. Jalankan Preprocessing, Filter & Labeling (Alur IPYNB)", key="btn_process"):
+                    st.session_state.processed_df = None
                     st.session_state.ml_results = None
                     if text_col not in df_input.columns: st.error("Kolom teks tidak valid.")
                     elif df_input[text_col].isnull().all(): st.error(f"Kolom '{text_col}' kosong.")
                     else:
-                        # Panggil fungsi preprocess + filter + label
-                        df_processed, total_awal, total_filtered, total_label = preprocess_and_label(df_input, text_col, pos_lex, neg_lex)
-                        st.session_state.processed_df = df_processed # Simpan hasil
+                        # Panggil fungsi preprocess LENGKAP
+                        df_processed, total_awal, total_clean_dedup, total_filtered, \
+                        total_tokenized, total_normalized, total_stopwords, \
+                        total_stemmed, total_label = preprocess_and_label(
+                            df_input, text_col, pos_lex, neg_lex, 
+                            kamus_normalisasi, stop_words, stemmer
+                        )
+                        st.session_state.processed_df = df_processed
                         
-                        # Tampilkan metrik data
                         st.header("🧩 Hasil Preprocessing, Filter & Labeling")
                         colA, colB, colC = st.columns(3)
                         colA.metric("Total Data Awal", total_awal)
-                        colB.metric("Data Setelah Filter Polri", total_filtered)
-                        colC.metric("Data yang Dilabeli", total_label)
+                        colB.metric("Data Setelah Clean & Dedupe", total_clean_dedup)
+                        colC.metric("Data Setelah Filter Polri", total_filtered)
+                        st.write(f"Data dtokenisasi: {total_tokenized}, Dinormalisasi: {total_normalized}, Stopwords: {total_stopwords}, Stemmed: {total_stemmed}, Dilabeli: {total_label}")
 
-                # Tampilkan hasil labeling jika sudah ada
+
                 if st.session_state.processed_df is not None:
                     if not st.session_state.processed_df.empty:
                         st.dataframe(st.session_state.processed_df.head(10), hide_index=True)
                         st.bar_chart(st.session_state.processed_df["sentiment"].value_counts())
                         
-                        # Tampilkan Word Clouds
                         show_wordcloud(st.session_state.processed_df)
 
-                        # Bagian ML
                         st.header("🤖 2. Pelatihan Model Machine Learning")
-                        st.markdown("Model akan dilatih menggunakan **Label Lexicon** sebagai target dan **Teks (Case Folded)** sebagai fitur.")
+                        st.markdown("Model akan dilatih menggunakan **Label Lexicon** sebagai target dan **Teks (Case Folded)** sebagai fitur (Sesuai IPYNB).")
                         
-                        col_ml1, col_ml2 = st.columns(2)
-                        with col_ml1:
-                            # --- PERBAIKAN: Slider Test Size ---
-                            test_size_percent = st.slider(
-                                "Pilih Test Size (Data Uji)", 
-                                10, 50, 30, step=5, 
-                                format="%d%%", 
-                                key="slider_test_tab1" # Key unik
-                            )
-                            test_size = test_size_percent / 100.0 
+                        # --- UI Slider Dihapus ---
+                        st.info(f"Parameter IPYNB: Test Size = {0.2:.0%}, Max Features = 5000, Model SVM = LinearSVC")
 
-                        with col_ml2:
-                            # --- PERBAIKAN: Input Max Features ---
-                            max_feat_input = st.number_input(
-                                "Max Features TF-IDF (0 = Semua)", 
-                                min_value=0, 
-                                max_value=100000, 
-                                value=5000, 
-                                step=100, 
-                                key="numinput_maxfeat_tab1", # Key unik
-                                help="Masukkan jumlah fitur/kata. Masukkan 0 untuk menggunakan semua fitur."
-                            )
-                            max_feat = None if max_feat_input == 0 else int(max_feat_input)
-                        
-                        display_max_feat = "Semua" if max_feat is None else max_feat
-                        st.info(f"Data uji: {test_size:.0%}. Data Latih: {1-test_size:.0%}. Max Features: {display_max_feat}")
-
-
-                        if st.button("🤖 Latih Model NB & SVM", key="btn_train"):
-                            st.session_state.ml_results = None # Reset
-                            with st.spinner("🔢 Melatih model ML..."):
-                                results = train_models(st.session_state.processed_df, max_feat, test_size) 
-                                st.session_state.ml_results = results # Simpan hasil
+                        if st.button("🤖 Latih Model NB & LinearSVC", key="btn_train"):
+                            st.session_state.ml_results = None
+                            with st.spinner("🔢 Melatih model ML (Logika IPYNB)..."):
+                                results = train_models(st.session_state.processed_df) 
+                                st.session_state.ml_results = results
 
                     else:
-                        # Ini dieksekusi jika st.session_state.processed_df ada tapi kosong
                         st.warning("⚠️ Tidak ada data relevan dengan Polri setelah filter.")
 
-                # Tampilkan Hasil ML jika ada
                 if st.session_state.ml_results is not None:
                     results = st.session_state.ml_results
                     st.header("📈 3. Hasil & Evaluasi Model")
                     
                     colD, colE = st.columns(2)
                     colD.metric("Akurasi Naive Bayes", f"{results['nb']['acc']:.2%}")
-                    colE.metric("Akurasi SVM (Linear)", f"{results['svm']['acc']:.2%}")
+                    colE.metric("Akurasi SVM (LinearSVC)", f"{results['svm']['acc']:.2%}") # Diubah
 
-                    st.subheader("Perbandingan Metrik (Weighted Avg)")
-                    show_metric_comparison(results["nb"]["report"], results["svm"]["report"])
+                    # --- show_metric_comparison dihapus ---
                     
                     st.subheader("Confusion Matrix")
                     colF, colG = st.columns(2)
                     with colF:
                         show_confusion(results["y_test"], results["nb"]["preds"], "Naive Bayes", results["labels"])
                     with colG:
-                        show_confusion(results["y_test"], results["svm"]["preds"], "SVM (Linear)", results["labels"])
+                        show_confusion(results["y_test"], results["svm"]["preds"], "SVM (LinearSVC)", results["labels"]) # Diubah
                     
                     st.subheader("Laporan Klasifikasi Detail")
                     with st.expander("Lihat Laporan Naive Bayes"):
                         st.dataframe(pd.DataFrame(results['nb']['report']).transpose())
-                    with st.expander("Lihat Laporan SVM (Linear)"):
+                    with st.expander("Lihat Laporan SVM (LinearSVC)"): # Diubah
                         st.dataframe(pd.DataFrame(results['svm']['report']).transpose())
 
-                    # Download button
                     st.header("📥 4. Unduh Hasil Labeling")
                     if st.session_state.processed_df is not None and not st.session_state.processed_df.empty:
                         csv_data = st.session_state.processed_df.to_csv(index=False).encode("utf-8")
                         base_filename = st.session_state.current_filename.split('.')[0] if '.' in st.session_state.current_filename else st.session_state.current_filename
                         st.download_button(
-                            "Unduh CSV Hasil Labeling",
+                            "Unduh CSV Hasil Labeling (Full Preprocessing)",
                             csv_data,
-                            f"hasil_sentimen_polri_{base_filename}.csv",
+                            f"hasil_sentimen_polri_full_{base_filename}.csv",
                             "text/csv",
                             key="download_csv_final"
                         )
-                    
+                
             elif not text_col:
                 st.warning("☝️ Pilih kolom teks terlebih dahulu.")
                 
@@ -478,38 +585,32 @@ with tab1:
             st.error("File CSV yang diunggah kosong.")
         except Exception as e:
             st.error(f"Terjadi kesalahan saat memproses file: {e}")
-            st.exception(e) # Tampilkan traceback untuk debug
+            st.exception(e)
 
     else:
         st.info("Silakan unggah file CSV untuk memulai analisis.")
 
 # ==============================================================================
-# 🟩 TAB 2: INPUT TEKS (TANPA FILTER POLRI)
+# 🟩 TAB 2: INPUT TEKS (Disesuaikan ke Alur IPYNB)
 # ==============================================================================
 with tab2:
-    st.header("💬 Analisis Cepat Teks Tunggal (Umum)")
-    st.info("Fitur ini menganalisis sentimen teks apapun (tanpa filter Polri) menggunakan leksikon.")
+    st.header("💬 Analisis Cepat Teks Tunggal (Umum - Alur IPYNB)")
+    st.info("Fitur ini menganalisis sentimen teks apapun (tanpa filter Polri) menggunakan alur preprocessing LENGKAP (Termasuk Stemming & Normalisasi).")
     input_text = st.text_area("Ketik atau paste teks di sini:", height=150, key="text_area_single")
 
     if st.button("🔍 Analisis Teks Ini", key="button_analyze_single"):
         if input_text and input_text.strip():
-            with st.spinner("Menganalisis teks..."):
-                # Panggil analyze_single_text, tapi gunakan versi yang dimodifikasi
-                # 1. Clean
-                cleaned_display = preprocess_text(input_text)
-                sentiment = "tidak valid" # Default
+            with st.spinner("Menganalisis teks (Alur IPYNB)..."):
                 
-                if cleaned_display:
-                    # 2. Lower
-                    cleaned_lower = cleaned_display.lower()
-                    # 3. Label (Tanpa Filter)
-                    sentiment = label_sentiment_two_class(cleaned_lower, pos_lex, neg_lex)
-                else:
-                    sentiment = "tidak valid"
-                    
+                # Panggil fungsi analisis lengkap (Sesuai IPYNB)
+                sentiment, cleaned_display = analyze_single_text(
+                    input_text, pos_lex, neg_lex, 
+                    kamus_normalisasi, stop_words, stemmer
+                )
+                        
             st.subheader("Hasil Analisis:")
             st.write("**Teks Setelah Preprocessing (Cleaned):**")
-            st.info(f"`{cleaned_display}`") # Tampilkan teks cleaned (bukan lowercase)
+            st.info(f"`{cleaned_display}`") 
             st.write("**Hasil Sentimen:**")
 
             if sentiment == "positif":
@@ -524,4 +625,4 @@ with tab2:
 
 # --- Footer ---
 st.markdown("---")
-st.markdown("Aplikasi Analisis Sentimen") # Judul footer diubah
+st.markdown("Aplikasi Analisis Sentimen (Menggunakan Logika IPYNB)")
