@@ -50,8 +50,8 @@ def is_relevant_to_polri(text):
         "polwan", # Polisi Wanita
     
         # Jabatan/Pangkat Umum Polri
-        "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres", "kapolsek", "wakapolsek",
-        "penyidik", "reskrim", "kasat", "kanit",
+        "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres",
+        "kapolsek", "wakapolsek", "penyidik", "reskrim", "kasat", "kanit",
         "jenderal polisi", "komjen", "irjen", "brigjen", # Pati
         "kombes", "akbp", "kompol", # Pamen
         "akp", "iptu", "ipda", # Pama
@@ -59,7 +59,7 @@ def is_relevant_to_polri(text):
         "bharada", "bharatu", "bharaka" # Tamtama (umum + Brimob/Polairud)
     ]
 
-exclude_keywords = [
+    exclude_keywords = [
         # Institusi/Satuan Utama TNI
         "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
         "kodam", "korem", "kodim", "koramil", # Komando Wilayah AD
@@ -82,9 +82,11 @@ exclude_keywords = [
         "peltu", "pelda", "serma", "serka", "sertu", "serda", # Bintara
         "kopka", "koptu", "kopda", "praka", "pratu", "prada" # Tamtama
     ]
+
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
     pattern_exclude = r"\b(?:{})\b".format("|".join(exclude_keywords))
     return bool(re.search(pattern_polri, text)) and not re.search(pattern_exclude, text)
+
 
 # ==============================================================================
 # 🔹 Load Kamus & Leksikon
