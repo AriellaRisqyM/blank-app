@@ -1,9 +1,9 @@
 # =====================================================================
-# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML, Progres Tahapan)
+# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML)
 # =====================================================================
 import streamlit as st
 import pandas as pd
-import requests, re, json, time
+import requests, re, json
 import matplotlib.pyplot as plt
 import seaborn as sns
 from wordcloud import WordCloud
@@ -13,8 +13,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
-from imblearn.over_sampling import SMOTE
 
 tqdm.pandas()
 st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
@@ -24,6 +22,7 @@ st.title("📊 Analisis Sentimen Polri (Lexicon + Machine Learning)")
 # 🔹 1. PREPROCESSING
 # =====================================================================
 def preprocess_text(text):
+    """Membersihkan teks dari URL, mention, hashtag, simbol."""
     if not isinstance(text, str):
         return ""
     text = re.sub(r"http\S+", "", text)
@@ -33,41 +32,55 @@ def preprocess_text(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text.lower()
 
-def normalize_and_stem(text, kamus_normalisasi):
-    factory = StemmerFactory()
-    stemmer = factory.create_stemmer()
-    tokens = text.split()
-    normalized = []
-    for t in tokens:
-        t = kamus_normalisasi.get(t, t)
-        normalized.append(stemmer.stem(t))
-    return " ".join(normalized)
-
-# ⚠️ Tidak diubah sesuai permintaan
 def is_relevant_to_polri(text):
+    """Cek relevansi teks terhadap Polri."""
     keywords_polri = [
+        # Institusi/Satuan Utama Polri
         "polri", "kepolisian", "mabes polri", "polda", "polres", "polsek", "polrestabes", "polresta",
-        "brimob", "korbrimob", "gegana", "pelopor", "bareskrim", "ditreskrimum", "ditreskrimsus",
-        "ditresnarkoba", "korlantas", "ditlantas", "satlantas", "intelkam", "satintelkam",
-        "densus", "densus 88", "propam", "divpropam", "paminal", "wabprof", "provos",
-        "polairud", "korpolairud", "sabhara", "samapta", "ditsamapta", "satsamapta", "binmas",
-        "satbinmas", "bhabinkamtibmas", "polwan", "polisi", "kapolri", "wakapolri", "kapolda",
-        "wakapolda", "kapolres", "wakapolres", "kapolsek", "wakapolsek", "penyidik", "reskrim",
-        "kasat", "kanit", "jenderal polisi", "komjen", "irjen", "brigjen", "kombes", "akbp",
-        "kompol", "akp", "iptu", "ipda", "aiptu", "aipda", "bripka", "brigpol", "brigadir",
-        "briptu", "bripda", "bharada", "bharatu", "bharaka"
+        "brimob", "korbrimob", "gegana", "pelopor",
+        "bareskrim", "ditreskrimum", "ditreskrimsus", "ditresnarkoba", # Direktorat Reserse
+        "korlantas", "ditlantas", "satlantas", # Lalu Lintas
+        "intelkam", "satintelkam", "densus", "densus 88", # Intelijen & Anti-Teror
+        "propam", "divpropam", "paminal", "wabprof", "provos", # Pengawasan Internal
+        "polairud", "korpolairud", # Polisi Air & Udara
+        "sabhara", "samapta", "ditsamapta", "satsamapta", # Samapta/Patroli
+        "binmas", "satbinmas", "bhabinkamtibmas", # Pembinaan Masyarakat
+        "polwan", # Polisi Wanita
+    
+        # Jabatan/Pangkat Umum Polri
+        "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres",
+        "kapolsek", "wakapolsek", "penyidik", "reskrim", "kasat", "kanit",
+        "jenderal polisi", "komjen", "irjen", "brigjen", # Pati
+        "kombes", "akbp", "kompol", # Pamen
+        "akp", "iptu", "ipda", # Pama
+        "aiptu", "aipda", "bripka", "brigpol", "brigadir", "briptu", "bripda", # Bintara
+        "bharada", "bharatu", "bharaka" # Tamtama (umum + Brimob/Polairud)
     ]
+
     exclude_keywords = [
+        # Institusi/Satuan Utama TNI
         "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
-        "kodam", "korem", "kodim", "koramil", "kostrad", "pangkostrad", "divif", "kopassus",
-        "danjenkopassus", "marinir", "kormar", "pasmar", "kopaska", "denjaka", "paskhas",
-        "korpaskhas", "denbravo", "armed", "kavaleri", "zeni", "arhanud", "yonif",
-        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau",
-        "pangdam", "danrem", "dandim", "danramil", "jenderal tni", "laksamana", "marsekal",
-        "letjen", "laksdya", "marsdya", "mayjen", "laksda", "marsda", "brigjen tni", "laksma",
-        "marsma", "kolonel", "letkol", "mayor", "kapten", "lettu", "letda", "peltu", "pelda",
-        "serma", "serka", "sertu", "serda", "kopka", "koptu", "kopda", "praka", "pratu", "prada"
+        "kodam", "korem", "kodim", "koramil", # Komando Wilayah AD
+        "kostrad", "pangkostrad", "divif", # Komando Strategis AD
+        "kopassus", "danjenkopassus", # Komando Pasukan Khusus AD
+        "marinir", "kormar", "pasmar", # Korps Marinir AL
+        "kopaska", "denjaka", # Pasukan Khusus AL
+        "paskhas", "korpaskhas", "denbravo", # Pasukan Khas AU
+        "armed", "kavaleri", "zeni", "arhanud", "yonif", # Beberapa kecabangan umum TNI AD
+    
+        # Jabatan/Pangkat Umum TNI
+        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau", # Pimpinan & Jabatan Strategis
+        "pangdam", "danrem", "dandim", "danramil", # Komandan Wilayah
+        "jenderal tni", "laksamana", "marsekal", # Bintang 4
+        "letjen", "laksdya", "marsdya", # Bintang 3
+        "mayjen", "laksda", "marsda", # Bintang 2
+        "brigjen tni", "laksma", "marsma", # Bintang 1
+        "kolonel", "letkol", "mayor", # Pamen
+        "kapten", "lettu", "letda", # Pama
+        "peltu", "pelda", "serma", "serka", "sertu", "serda", # Bintara
+        "kopka", "koptu", "kopda", "praka", "pratu", "prada" # Tamtama
     ]
+
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
     pattern_exclude = r"\b(?:{})\b".format("|".join(exclude_keywords))
     return bool(re.search(pattern_polri, text)) and not re.search(pattern_exclude, text)
@@ -77,6 +90,7 @@ def is_relevant_to_polri(text):
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
+    st.info("📚 Memuat kamus dan leksikon sentimen...")
     urls = {
         "normalisasi": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/nasalsabila_kamus-alay/_json_colloquial-indonesian-lexicon.txt",
         "stopword": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/masdevid_id-stopwords/id.stopwords.02.01.2016.txt",
@@ -104,7 +118,60 @@ def label_sentiment_two_class(text, pos_lex, neg_lex):
     return "positif" if pos >= neg else "negatif"
 
 # =====================================================================
-# 🔹 4. VISUALISASI
+# 🔹 4. PREPROCESS + LABEL + FILTER
+# =====================================================================
+@st.cache_data
+def preprocess_and_label(df, text_col, pos_lex, neg_lex):
+    total_awal = len(df)
+    df[text_col] = df[text_col].astype(str)
+    df["cleaned_text"] = df[text_col].apply(preprocess_text)
+    df_filtered = df[df["cleaned_text"].apply(is_relevant_to_polri)]
+    total_filtered = len(df_filtered)
+
+    if df_filtered.empty:
+        return pd.DataFrame(), total_awal, total_filtered, 0
+
+    df_filtered["sentiment"] = df_filtered["cleaned_text"].progress_apply(
+        lambda x: label_sentiment_two_class(x, pos_lex, neg_lex)
+    )
+    total_label = len(df_filtered)
+    return df_filtered[["cleaned_text", "sentiment"]], total_awal, total_filtered, total_label
+
+# =====================================================================
+# 🔹 5. TRAIN MODEL + TF-IDF + EVALUASI
+# =====================================================================
+def train_models(df, max_features=5000, test_size=0.3):
+    X, y = df["cleaned_text"], df["sentiment"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, stratify=y, random_state=42
+    )
+
+    vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2))
+    X_train_tfidf = vectorizer.fit_transform(X_train)
+    X_test_tfidf = vectorizer.transform(X_test)
+
+    nb = MultinomialNB(alpha=0.3)
+    nb.fit(X_train_tfidf, y_train)
+    nb_pred = nb.predict(X_test_tfidf)
+
+    svm = SVC(kernel="linear", probability=True, random_state=42)
+    svm.fit(X_train_tfidf, y_train)
+    svm_pred = svm.predict(X_test_tfidf)
+
+    nb_report = classification_report(y_test, nb_pred, output_dict=True)
+    svm_report = classification_report(y_test, svm_pred, output_dict=True)
+
+    return {
+        "vectorizer": vectorizer, "X_train": X_train, "X_test": X_test,
+        "y_train": y_train, "y_test": y_test,
+        "nb": nb, "svm": svm,
+        "nb_pred": nb_pred, "svm_pred": svm_pred,
+        "nb_report": nb_report, "svm_report": svm_report
+    }
+
+# =====================================================================
+# 🔹 6. VISUALISASI & EVALUASI
 # =====================================================================
 def show_confusion(y_test, preds, model_name):
     cm = confusion_matrix(y_test, preds, labels=["positif", "negatif"])
@@ -125,109 +192,86 @@ def show_wordcloud(df):
         st.image(wc.to_array(), caption=f"WordCloud - {label.capitalize()}")
 
 # =====================================================================
-# 🔹 5. UI: TAB FILE
+# 🔹 7. UI: TAB FILE & INPUT TEKS
 # =====================================================================
 tab1, tab2 = st.tabs(["📂 Analisis File CSV", "⌨️ Analisis Cepat Teks Tunggal"])
 
-# ---------------- TAB 1 ----------------
+# =================== TAB 1 ===================
 with tab1:
     uploaded = st.file_uploader("Unggah Dataset CSV", type=["csv"])
     test_size = st.slider("Pilih Test Size (Data Uji)", 0.1, 0.5, 0.3, step=0.05)
     max_feat = st.slider("Max Features TF-IDF", 1000, 10000, 5000, step=1000)
-    progress = st.progress(0)
-    status = st.empty()
 
     if uploaded:
         df = pd.read_csv(uploaded)
-        st.success(f"✅ Data dimuat: {len(df)} baris")
-        st.dataframe(df.head(10))
-        text_col = st.selectbox("Pilih kolom teks:", df.columns.tolist())
+        text_col = st.selectbox("Pilih Kolom Teks", df.columns.tolist())
 
-        # Step 1
-        if st.button("🧩 Jalankan Preprocessing & Filter"):
-            status.text("🔄 Preprocessing data...")
-            progress.progress(25)
-            df[text_col] = df[text_col].astype(str)
-            df["cleaned_text"] = df[text_col].apply(preprocess_text)
-            progress.progress(50)
-            df["cleaned_text"] = df["cleaned_text"].apply(lambda x: normalize_and_stem(x, kamus_normalisasi))
-            df = df[df["cleaned_text"].apply(is_relevant_to_polri)]
-            st.session_state["df_filtered"] = df
-            st.success(f"✅ Filter selesai, total {len(df)} data relevan")
-            st.dataframe(df.head(10))
-            progress.progress(60)
+        if st.button("🚀 Jalankan Analisis File"):
+            st.header("🧩 Tahap 1: Preprocessing & Labeling")
+            df_processed, total_awal, total_filtered, total_label = preprocess_and_label(df, text_col, pos_lex, neg_lex)
 
-        # Step 2
-        if "df_filtered" in st.session_state and st.button("🏷️ Jalankan Labeling Sentimen"):
-            status.text("🏷️ Melakukan pelabelan...")
-            progress.progress(70)
-            df = st.session_state["df_filtered"]
-            df["sentiment"] = df["cleaned_text"].progress_apply(lambda x: label_sentiment_two_class(x, pos_lex, neg_lex))
-            st.session_state["df_labeled"] = df
-            st.success("✅ Pelabelan selesai!")
-            st.bar_chart(df["sentiment"].value_counts())
-            progress.progress(80)
+            colA, colB, colC = st.columns(3)
+            colA.metric("Total Data Awal", total_awal)
+            colB.metric("Data Setelah Filter Polri", total_filtered)
+            colC.metric("Data yang Dilabeli", total_label)
 
-        # Step 3
-        if "df_labeled" in st.session_state and st.button("🧠 Jalankan TF-IDF & Model"):
-            status.text("🧠 Melatih model...")
-            progress.progress(85)
-            df = st.session_state["df_labeled"]
-            X, y = df["cleaned_text"], df["sentiment"]
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, stratify=y, random_state=42)
-            vectorizer = TfidfVectorizer(max_features=max_feat, ngram_range=(1, 3), sublinear_tf=True)
-            X_train_tfidf = vectorizer.fit_transform(X_train)
-            X_test_tfidf = vectorizer.transform(X_test)
-            sm = SMOTE(random_state=42)
-            X_train_tfidf, y_train = sm.fit_resample(X_train_tfidf, y_train)
-            nb = MultinomialNB(alpha=0.2)
-            nb.fit(X_train_tfidf, y_train)
-            svm = SVC(kernel="linear", C=2, class_weight="balanced", probability=True, random_state=42)
-            svm.fit(X_train_tfidf, y_train)
-            nb_pred = nb.predict(X_test_tfidf)
-            svm_pred = svm.predict(X_test_tfidf)
-            st.session_state["results"] = {"y_test": y_test, "nb_pred": nb_pred, "svm_pred": svm_pred,
-                                           "nb_report": classification_report(y_test, nb_pred, output_dict=True),
-                                           "svm_report": classification_report(y_test, svm_pred, output_dict=True)}
-            st.success("✅ Model berhasil dilatih!")
-            progress.progress(90)
+            if not df_processed.empty:
+                st.dataframe(df_processed.head(10))
+                st.bar_chart(df_processed["sentiment"].value_counts())
 
-        # Step 4
-        if "results" in st.session_state and st.button("📊 Evaluasi Model"):
-            res = st.session_state["results"]
-            y_test, nb_pred, svm_pred = res["y_test"], res["nb_pred"], res["svm_pred"]
-            nb_acc = accuracy_score(y_test, nb_pred)
-            svm_acc = accuracy_score(y_test, svm_pred)
-            st.metric("Akurasi Naive Bayes", f"{nb_acc*100:.2f}%")
-            st.metric("Akurasi SVM", f"{svm_acc*100:.2f}%")
-            col1, col2 = st.columns(2)
-            with col1:
-                show_confusion(y_test, nb_pred, "Naive Bayes")
-            with col2:
-                show_confusion(y_test, svm_pred, "SVM")
-            st.subheader("📈 Laporan Evaluasi Naive Bayes")
-            st.dataframe(pd.DataFrame(res["nb_report"]).transpose())
-            st.subheader("📈 Laporan Evaluasi SVM")
-            st.dataframe(pd.DataFrame(res["svm_report"]).transpose())
-            st.subheader("🌥️ WordCloud")
-            show_wordcloud(st.session_state["df_labeled"])
-            progress.progress(100)
-            status.text("✅ Selesai! Semua tahapan berhasil dieksekusi.")
+                st.header("🧠 Tahap 2: TF-IDF dan Pembagian Data")
+                results = train_models(df_processed, max_feat, test_size)
+                st.success("✅ TF-IDF dan split data berhasil!")
 
-# ---------------- TAB 2 ----------------
+                colD, colE = st.columns(2)
+                colD.metric("Data Latih", len(results["X_train"]))
+                colE.metric("Data Uji", len(results["X_test"]))
+
+                st.header("🌈 Tahap 3: WordCloud Sentimen")
+                show_wordcloud(df_processed)
+
+                st.header("🤖 Tahap 4: Pelatihan Model Naive Bayes & SVM")
+                nb_acc = accuracy_score(results["y_test"], results["nb_pred"])
+                svm_acc = accuracy_score(results["y_test"], results["svm_pred"])
+                st.metric("Akurasi Naive Bayes", f"{nb_acc*100:.2f}%")
+                st.metric("Akurasi SVM", f"{svm_acc*100:.2f}%")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    show_confusion(results["y_test"], results["nb_pred"], "Naive Bayes")
+                with col2:
+                    show_confusion(results["y_test"], results["svm_pred"], "SVM")
+
+                st.header("📈 Tahap 5: Evaluasi Model")
+                st.subheader("Naive Bayes")
+                st.dataframe(pd.DataFrame(results["nb_report"]).transpose())
+                st.subheader("SVM")
+                st.dataframe(pd.DataFrame(results["svm_report"]).transpose())
+
+                st.download_button(
+                    "📥 Unduh Hasil Labeling CSV",
+                    df_processed.to_csv(index=False).encode("utf-8"),
+                    "hasil_sentimen_polri.csv",
+                    "text/csv"
+                )
+            else:
+                st.warning("⚠️ Tidak ada data relevan dengan Polri setelah filter.")
+
+# =================== TAB 2 ===================
 with tab2:
     st.subheader("💬 Analisis Cepat Teks Tunggal")
     input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
     if st.button("🔍 Analisis Teks Ini"):
         if input_text.strip():
             cleaned = preprocess_text(input_text)
-            cleaned = normalize_and_stem(cleaned, kamus_normalisasi)
-            sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
-            st.info(f"Teks setelah preprocessing:\n{cleaned}")
-            if sentiment == "positif":
-                st.success("✅ Sentimen: POSITIF 😊")
-            else:
-                st.error("❌ Sentimen: NEGATIF 😠")
+            if not is_relevant_to_polri(cleaned):
+                st.warning("⚠️ Teks tidak relevan dengan Polri.")
+            else:btambahkan bar
+                sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
+                st.info(f"Teks setelah preprocessing:\n{cleaned}")
+                if sentiment == "positif":
+                    st.success("✅ Sentimen: POSITIF 😊")
+                else:
+                    st.error("❌ Sentimen: NEGATIF 😠")
         else:
             st.warning("Masukkan teks terlebih dahulu.")
-
