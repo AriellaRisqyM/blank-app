@@ -13,7 +13,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
 from sklearn.metrics import (
-    accuracy_score, classification_report, confusion_matrix, roc_curve, auc
+    accuracy_score, classification_report, confusion_matrix
 )
 
 tqdm.pandas()
@@ -39,70 +39,77 @@ def is_relevant_to_polri(text):
         # Institusi/Satuan Utama Polri
         "polri", "kepolisian", "mabes polri", "polda", "polres", "polsek", "polrestabes", "polresta",
         "brimob", "korbrimob", "gegana", "pelopor",
-        "bareskrim", "ditreskrimum", "ditreskrimsus", "ditresnarkoba", # Direktorat Reserse
-        "korlantas", "ditlantas", "satlantas", # Lalu Lintas
-        "intelkam", "satintelkam", "densus", "densus 88", # Intelijen & Anti-Teror
-        "propam", "divpropam", "paminal", "wabprof", "provos", # Pengawasan Internal
-        "polairud", "korpolairud", # Polisi Air & Udara
-        "sabhara", "samapta", "ditsamapta", "satsamapta", # Samapta/Patroli
-        "binmas", "satbinmas", "bhabinkamtibmas", # Pembinaan Masyarakat
-        "polwan", # Polisi Wanita
-    
+        "bareskrim", "ditreskrimum", "ditreskrimsus", "ditresnarkoba",
+        "korlantas", "ditlantas", "satlantas",
+        "intelkam", "satintelkam", "densus", "densus 88",
+        "propam", "divpropam", "paminal", "wabprof", "provos",
+        "polairud", "korpolairud",
+        "sabhara", "samapta", "ditsamapta", "satsamapta",
+        "binmas", "satbinmas", "bhabinkamtibmas",
+        "polwan",
         # Jabatan/Pangkat Umum Polri
         "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres",
         "kapolsek", "wakapolsek", "penyidik", "reskrim", "kasat", "kanit",
-        "jenderal polisi", "komjen", "irjen", "brigjen", # Pati
-        "kombes", "akbp", "kompol", # Pamen
-        "akp", "iptu", "ipda", # Pama
-        "aiptu", "aipda", "bripka", "brigpol", "brigadir", "briptu", "bripda", # Bintara
-        "bharada", "bharatu", "bharaka" # Tamtama (umum + Brimob/Polairud)
+        "jenderal polisi", "komjen", "irjen", "brigjen",
+        "kombes", "akbp", "kompol",
+        "akp", "iptu", "ipda",
+        "aiptu", "aipda", "bripka", "brigpol", "brigadir", "briptu", "bripda",
+        "bharada", "bharatu", "bharaka"
     ]
 
     exclude_keywords = [
         # Institusi/Satuan Utama TNI
         "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
-        "kodam", "korem", "kodim", "koramil", # Komando Wilayah AD
-        "kostrad", "pangkostrad", "divif", # Komando Strategis AD
-        "kopassus", "danjenkopassus", # Komando Pasukan Khusus AD
-        "marinir", "kormar", "pasmar", # Korps Marinir AL
-        "kopaska", "denjaka", # Pasukan Khusus AL
-        "paskhas", "korpaskhas", "denbravo", # Pasukan Khas AU
-        "armed", "kavaleri", "zeni", "arhanud", "yonif", # Beberapa kecabangan umum TNI AD
-    
+        "kodam", "korem", "kodim", "koramil",
+        "kostrad", "pangkostrad", "divif",
+        "kopassus", "danjenkopassus",
+        "marinir", "kormar", "pasmar",
+        "kopaska", "denjaka",
+        "paskhas", "korpaskhas", "denbravo",
+        "armed", "kavaleri", "zeni", "arhanud", "yonif",
         # Jabatan/Pangkat Umum TNI
-        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau", # Pimpinan & Jabatan Strategis
-        "pangdam", "danrem", "dandim", "danramil", # Komandan Wilayah
-        "jenderal tni", "laksamana", "marsekal", # Bintang 4
-        "letjen", "laksdya", "marsdya", # Bintang 3
-        "mayjen", "laksda", "marsda", # Bintang 2
-        "brigjen tni", "laksma", "marsma", # Bintang 1
-        "kolonel", "letkol", "mayor", # Pamen
-        "kapten", "lettu", "letda", # Pama
-        "peltu", "pelda", "serma", "serka", "sertu", "serda", # Bintara
-        "kopka", "koptu", "kopda", "praka", "pratu", "prada" # Tamtama
+        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau",
+        "pangdam", "danrem", "dandim", "danramil",
+        "jenderal tni", "laksamana", "marsekal",
+        "letjen", "laksdya", "marsdya",
+        "mayjen", "laksda", "marsda",
+        "brigjen tni", "laksma", "marsma",
+        "kolonel", "letkol", "mayor",
+        "kapten", "lettu", "letda",
+        "peltu", "pelda", "serma", "serka", "sertu", "serda",
+        "kopka", "koptu", "kopda", "praka", "pratu", "prada"
     ]
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
     pattern_exclude = r"\b(?:{})\b".format("|".join(exclude_keywords))
     return bool(re.search(pattern_polri, text)) and not re.search(pattern_exclude, text)
 
 # =====================================================================
-# 🔹 2. LOAD KAMUS & LEXICON
+# 🔹 2. LOAD KAMUS & LEXICON (4 sumber)
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
-    st.info("📚 Memuat kamus dan leksikon sentimen...")
+    st.info("📚 Memuat kamus dan leksikon sentimen dari 4 sumber...")
     urls = {
         "normalisasi": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/nasalsabila_kamus-alay/_json_colloquial-indonesian-lexicon.txt",
         "stopword": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/masdevid_id-stopwords/id.stopwords.02.01.2016.txt",
-        "inset_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
-        "inset_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv"
+        "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
+        "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
+        "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
+        "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv"
     }
+
+    # Kamus normalisasi & stopwords
     kamus_normalisasi = json.loads(requests.get(urls["normalisasi"]).text)
     stopwords = set(requests.get(urls["stopword"]).text.splitlines())
-    pos = set(pd.read_csv(urls["inset_pos"], sep="\t", header=None)[0].dropna().astype(str))
-    neg = set(pd.read_csv(urls["inset_neg"], sep="\t", header=None)[0].dropna().astype(str))
-    st.success(f"✅ Leksikon dimuat: {len(pos)} positif, {len(neg)} negatif, {len(stopwords)} stopword.")
-    return kamus_normalisasi, stopwords, pos, neg
+
+    # Gabungkan lexicon positif & negatif dari 2 sumber
+    pos_lex = set(pd.read_csv(urls["fajri_pos"], sep="\t", header=None)[0].dropna().astype(str)) \
+              .union(set(pd.read_csv(urls["onpilot_pos"], sep="\t", header=None)[0].dropna().astype(str)))
+    neg_lex = set(pd.read_csv(urls["fajri_neg"], sep="\t", header=None)[0].dropna().astype(str)) \
+              .union(set(pd.read_csv(urls["onpilot_neg"], sep="\t", header=None)[0].dropna().astype(str)))
+
+    st.success(f"✅ Leksikon dimuat: {len(pos_lex)} positif, {len(neg_lex)} negatif, {len(stopwords)} stopword.")
+    return kamus_normalisasi, stopwords, pos_lex, neg_lex
 
 kamus_normalisasi, stopword_set, pos_lex, neg_lex = load_lexicons()
 
@@ -190,7 +197,6 @@ def show_wordcloud(df):
 
 def show_metric_comparison(nb_report, svm_report):
     metrics = ["precision", "recall", "f1-score"]
-    models = ["Naive Bayes", "SVM"]
     values = {
         "Naive Bayes": [nb_report["weighted avg"][m] for m in metrics],
         "SVM": [svm_report["weighted avg"][m] for m in metrics]
@@ -267,7 +273,6 @@ with tab1:
             else:
                 st.warning("⚠️ Tidak ada data relevan dengan Polri setelah filter.")
 
-# =================== TAB 2 ===================
 # =================== TAB 2 ===================
 with tab2:
     st.subheader("💬 Analisis Cepat Teks Tunggal")
