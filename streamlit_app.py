@@ -41,11 +41,13 @@ st.title("📊 Analisis Sentimen Polri (Logika IPYNB)")
 def load_nltk_punkt():
     """Memastikan NLTK Punkt diunduh."""
     try:
-        nltk.data.find('tokenizers/punkt')
+        # Kita cek 'punkt_tab' secara spesifik, karena itu yang diminta error
+        nltk.data.find('tokenizers/punkt_tab') 
     except LookupError:
-        st.info("Mengunduh NLTK 'punkt' tokenizer...")
-        nltk.download('punkt')
-        st.info("Unduhan 'punkt' selesai.")
+        st.info("Mengunduh NLTK 'punkt_tab' tokenizer...")
+        nltk.download('punkt_tab') # <-- PERBAIKAN: Diubah dari 'punkt' ke 'punkt_tab'
+        st.info("Unduhan 'punkt_tab' selesai.")
+
 
 @st.cache_resource
 def get_stemmer():
