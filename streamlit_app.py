@@ -79,13 +79,14 @@ def is_relevant_to_polri(text_lower):
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
-    """Memuat dan menggabungkan leksikon InSet (2 sumber)."""
+    """Memuat leksikon InSet (1 sumber).""" # --- PERUBAHAN ---
     st.info("📚 Memuat kamus positif & negatif...")
     urls = {
         "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
         "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
-        "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
-        "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv",
+        # --- DINONAKTIFKAN ---
+        # "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
+        # "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv",
     }
 
     pos_lex = set()
@@ -99,13 +100,15 @@ def load_lexicons():
     except Exception as e:
         st.warning(f"⚠️ Gagal memuat leksikon fajri91: {e}")
 
-    try:
-        # Muat onpilot (header=0, kolom 'word')
-        pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_pos"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_neg"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        st.info("    -> OK: Leksikon onpilot dimuat.")
-    except Exception as e:
-        st.warning(f"⚠️ Gagal memuat leksikon onpilot: {e}")
+    # --- DINONAKTIFKAN ---
+    # try:
+    #     # Muat onpilot (header=0, kolom 'word')
+    #     pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_pos"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
+    #     neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_neg"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
+    #     st.info("    -> OK: Leksikon onpilot dimuat.")
+    # except Exception as e:
+    #     st.warning(f"⚠️ Gagal memuat leksikon onpilot: {e}")
+    # --- AKHIR BLOK DINONAKTIFKAN ---
 
     st.success(f"✅ Leksikon dimuat: {len(pos_lex)} kata positif unik, {len(neg_lex)} kata negatif unik.")
     return pos_lex, neg_lex
