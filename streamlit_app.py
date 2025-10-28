@@ -401,7 +401,7 @@ with tab1:
                         with col_ml1:
                             test_size = st.slider("Pilih Test Size (Data Uji)", 0.1, 0.5, 0.3, step=0.05, format="%.0f%%", key="slider_test")
                         with col_ml2:
-                            max_feat = st.slider("Max Features TF-IDF", 1000, 10000, 5000, step=1000, key="slider_maxfeat")
+                            max_feat = st.slider("Max Features TF-IDF", 0, 1000, 10000, 5000, step=1, key="slider_maxfeat")
 
                         if st.button("🤖 Latih Model NB & SVM", key="btn_train"):
                             st.session_state.ml_results = None # Reset
