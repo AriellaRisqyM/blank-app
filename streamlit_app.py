@@ -79,14 +79,13 @@ def is_relevant_to_polri(text_lower):
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
-    """Memuat dan menggabungkan leksikon InSet (2 sumber) dan SentiStrength."""
+    """Memuat dan menggabungkan leksikon InSet (2 sumber)."""
     st.info("📚 Memuat kamus positif & negatif...")
     urls = {
         "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
         "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
         "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
         "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv",
-        "sentiwords_json": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/_json_sentiwords_id.txt"
     }
 
     pos_lex = set()
@@ -96,7 +95,7 @@ def load_lexicons():
         # Muat fajri91 (header=None, kolom 0)
         pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_pos"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_neg"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        st.info("   -> OK: Leksikon fajri91 dimuat.")
+        st.info("    -> OK: Leksikon fajri91 dimuat.")
     except Exception as e:
         st.warning(f"⚠️ Gagal memuat leksikon fajri91: {e}")
 
@@ -104,21 +103,9 @@ def load_lexicons():
         # Muat onpilot (header=0, kolom 'word')
         pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_pos"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_neg"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        st.info("   -> OK: Leksikon onpilot dimuat.")
+        st.info("    -> OK: Leksikon onpilot dimuat.")
     except Exception as e:
         st.warning(f"⚠️ Gagal memuat leksikon onpilot: {e}")
-
-    # Muat SentiWords JSON
-    try:
-        senti_json = json.loads(requests.get(urls["sentiwords_json"]).text)
-        for k, v in senti_json.items():
-            if int(v) > 0:
-                pos_lex.add(k)
-            elif int(v) < 0:
-                neg_lex.add(k)
-        st.info(f"   -> OK: Leksikon SentiWords JSON dimuat ({len(senti_json)} entri).")
-    except Exception as e:
-        st.warning(f"⚠️ Gagal memuat sentiwords JSON: {e}")
 
     st.success(f"✅ Leksikon dimuat: {len(pos_lex)} kata positif unik, {len(neg_lex)} kata negatif unik.")
     return pos_lex, neg_lex
@@ -527,7 +514,7 @@ with tab2:
             elif sentiment == "negatif":
                 st.error("❌ Sentimen: NEGATIF 😠")
             else: # 'tidak valid'
-                 st.warning("⚠️ Teks tidak valid atau menjadi kosong setelah preprocessing.")
+               st.warning("⚠️ Teks tidak valid atau menjadi kosong setelah preprocessing.")
 
         else:
             st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
