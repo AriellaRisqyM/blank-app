@@ -1,5 +1,5 @@
 # =====================================================================
-# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL
+# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL 2 KELAS
 # =====================================================================
 import streamlit as st
 import pandas as pd
@@ -16,7 +16,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 
 tqdm.pandas()
 st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
-st.title("📊 Analisis Sentimen Polri (Lexicon + Machine Learning)")
+st.title("📊 Analisis Sentimen Polri (Lexicon + ML) — 2 Kelas")
 
 # =====================================================================
 # 1. PREPROCESSING
@@ -61,7 +61,6 @@ def is_relevant_to_polri(text):
 @st.cache_resource
 def load_lexicons():
     st.info("📚 Memuat kamus positif & negatif...")
-
     urls = {
         "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
         "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
@@ -91,14 +90,13 @@ def load_lexicons():
 pos_lex, neg_lex = load_lexicons()
 
 # =====================================================================
-# 3. LABEL SENTIMEN
+# 3. LABEL SENTIMEN (Hanya Positif & Negatif)
 # =====================================================================
 def label_sentiment_two_class(text, pos_lex, neg_lex):
     tokens = text.split()
     pos = sum(1 for t in tokens if t in pos_lex)
     neg = sum(1 for t in tokens if t in neg_lex)
-    if pos == 0 and neg == 0:
-        return "netral"
+    # Selalu 2 kelas: positif atau negatif
     return "positif" if pos >= neg else "negatif"
 
 # =====================================================================
@@ -152,7 +150,7 @@ def train_models(df, max_features=5000, test_size=0.3):
     }
 
 # =====================================================================
-# 6. VISUALISASI & EVALUASI
+# 6. VISUALISASI
 # =====================================================================
 def show_confusion(y_test, preds, model_name):
     cm = confusion_matrix(y_test, preds, labels=["positif", "negatif"])
@@ -257,9 +255,7 @@ with tab2:
             st.write("**Hasil Sentimen:**")
             if sentiment == "positif":
                 st.success("✅ Sentimen: POSITIF 😊")
-            elif sentiment == "negatif":
-                st.error("❌ Sentimen: NEGATIF 😠")
             else:
-                st.warning("⚠️ Netral / Tidak dapat menentukan sentimen.")
+                st.error("❌ Sentimen: NEGATIF 😠")
         else:
             st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
