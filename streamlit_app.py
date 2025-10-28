@@ -33,15 +33,54 @@ def preprocess_text(text):
     return text.lower()
 
 def is_relevant_to_polri(text):
-    """Filter teks relevan terhadap Polri."""
+    """Cek relevansi teks terhadap Polri."""
     keywords_polri = [
-        "polri","kepolisian","polda","polres","polsek","brimob","bhabinkamtibmas","bareskrim",
-        "satlantas","propam","polairud","polwan","kapolri","kapolda","kapolres","kapolsek",
-        "reskrim","kasat","penyidik","bhayangkara"
+        # Institusi/Satuan Utama Polri
+        "polri", "kepolisian", "mabes polri", "polda", "polres", "polsek", "polrestabes", "polresta",
+        "brimob", "korbrimob", "gegana", "pelopor",
+        "bareskrim", "ditreskrimum", "ditreskrimsus", "ditresnarkoba", # Direktorat Reserse
+        "korlantas", "ditlantas", "satlantas", # Lalu Lintas
+        "intelkam", "satintelkam", "densus", "densus 88", # Intelijen & Anti-Teror
+        "propam", "divpropam", "paminal", "wabprof", "provos", # Pengawasan Internal
+        "polairud", "korpolairud", # Polisi Air & Udara
+        "sabhara", "samapta", "ditsamapta", "satsamapta", # Samapta/Patroli
+        "binmas", "satbinmas", "bhabinkamtibmas", # Pembinaan Masyarakat
+        "polwan", # Polisi Wanita
+    
+        # Jabatan/Pangkat Umum Polri
+        "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres",
+        "kapolsek", "wakapolsek", "penyidik", "reskrim", "kasat", "kanit",
+        "jenderal polisi", "komjen", "irjen", "brigjen", # Pati
+        "kombes", "akbp", "kompol", # Pamen
+        "akp", "iptu", "ipda", # Pama
+        "aiptu", "aipda", "bripka", "brigpol", "brigadir", "briptu", "bripda", # Bintara
+        "bharada", "bharatu", "bharaka" # Tamtama (umum + Brimob/Polairud)
     ]
+
     exclude_keywords = [
-        "tni","tentara","prajurit","kostrad","kopassus","marinir","ksad","kasad","kkb","au","al","ad"
+        # Institusi/Satuan Utama TNI
+        "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
+        "kodam", "korem", "kodim", "koramil", # Komando Wilayah AD
+        "kostrad", "pangkostrad", "divif", # Komando Strategis AD
+        "kopassus", "danjenkopassus", # Komando Pasukan Khusus AD
+        "marinir", "kormar", "pasmar", # Korps Marinir AL
+        "kopaska", "denjaka", # Pasukan Khusus AL
+        "paskhas", "korpaskhas", "denbravo", # Pasukan Khas AU
+        "armed", "kavaleri", "zeni", "arhanud", "yonif", # Beberapa kecabangan umum TNI AD
+    
+        # Jabatan/Pangkat Umum TNI
+        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau", # Pimpinan & Jabatan Strategis
+        "pangdam", "danrem", "dandim", "danramil", # Komandan Wilayah
+        "jenderal tni", "laksamana", "marsekal", # Bintang 4
+        "letjen", "laksdya", "marsdya", # Bintang 3
+        "mayjen", "laksda", "marsda", # Bintang 2
+        "brigjen tni", "laksma", "marsma", # Bintang 1
+        "kolonel", "letkol", "mayor", # Pamen
+        "kapten", "lettu", "letda", # Pama
+        "peltu", "pelda", "serma", "serka", "sertu", "serda", # Bintara
+        "kopka", "koptu", "kopda", "praka", "pratu", "prada" # Tamtama
     ]
+
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
     pattern_exclude = r"\b(?:{})\b".format("|".join(exclude_keywords))
     return bool(re.search(pattern_polri, text)) and not re.search(pattern_exclude, text)
