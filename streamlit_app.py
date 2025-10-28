@@ -261,13 +261,27 @@ with tab1:
 with tab2:
     st.subheader("💬 Analisis Cepat Teks Tunggal")
     input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
+    
     if st.button("🔍 Analisis Teks Ini"):
         if input_text.strip():
+            progress = st.progress(0, text="🔄 Memulai analisis teks...")
+
+            # Tahap 1: Preprocessing
+            progress.progress(20, text="🧹 Preprocessing teks...")
             cleaned = preprocess_text(input_text)
+
+            # Tahap 2: Cek relevansi
+            progress.progress(40, text="🔍 Mengecek relevansi teks terhadap Polri...")
             if not is_relevant_to_polri(cleaned):
+                progress.progress(100, text="⚠️ Teks tidak relevan dengan Polri.")
                 st.warning("⚠️ Teks tidak relevan dengan Polri.")
-            else:btambahkan bar
+            else:
+                # Tahap 3: Label sentimen
+                progress.progress(70, text="💬 Melakukan analisis sentimen...")
                 sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
+
+                # Tahap 4: Tampilkan hasil
+                progress.progress(100, text="✅ Analisis selesai.")
                 st.info(f"Teks setelah preprocessing:\n{cleaned}")
                 if sentiment == "positif":
                     st.success("✅ Sentimen: POSITIF 😊")
@@ -275,3 +289,4 @@ with tab2:
                     st.error("❌ Sentimen: NEGATIF 😠")
         else:
             st.warning("Masukkan teks terlebih dahulu.")
+
