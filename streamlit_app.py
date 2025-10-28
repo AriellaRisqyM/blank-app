@@ -454,6 +454,8 @@ def analyze_single_text(text, positive_lexicon, negative_lexicon, _kamus_norm, _
 if 'processed_df' not in st.session_state: st.session_state.processed_df = None
 if 'ml_results' not in st.session_state: st.session_state.ml_results = None
 if 'current_filename' not in st.session_state: st.session_state.current_filename = ""
+# --- PERBAIKAN: Tambahkan file_id ---
+if 'current_file_id' not in st.session_state: st.session_state.current_file_id = None
 
 tab1, tab2 = st.tabs(["📂 Analisis File CSV (Filter Polri)", "⌨️ Analisis Teks Umum"])
 
@@ -462,11 +464,14 @@ with tab1:
     st.info("Tab ini akan memfilter data dan hanya menganalisis teks yang relevan dengan Polri (menggunakan alur IPYNB).")
     uploaded = st.file_uploader("Unggah Dataset CSV", type=["csv"], label_visibility="collapsed")
     
-    if uploaded and uploaded.name != st.session_state.current_filename:
+    # --- PERBAIKAN: Cek file_id, bukan name ---
+    if uploaded and uploaded.file_id != st.session_state.current_file_id:
         st.session_state.processed_df = None
         st.session_state.ml_results = None
         st.session_state.current_filename = uploaded.name
+        st.session_state.current_file_id = uploaded.file_id # Simpan ID baru
         if 'selectbox_column' in st.session_state: del st.session_state['selectbox_column']
+    # --- AKHIR PERBAIKAN ---
 
     if uploaded:
         try:
