@@ -514,33 +514,22 @@ with tab1:
 # 🟩 TAB 2: INPUT TEKS (PERBAIKAN LOGIKA)
 # ==============================================================================
 with tab2:
-    st.header("💬 Analisis Cepat Teks Tunggal")
-    input_text = st.text_area("Ketik atau paste teks di sini:", height=150, key="text_area_single")
-
-    if st.button("🔍 Analisis Teks Ini", key="button_analyze_single"):
-        if input_text and input_text.strip():
-            with st.spinner("Menganalisis teks..."):
-                # --- PERBAIKAN LOGIKA: Panggil fungsi analyze_single_text ---
-                # Fungsi ini sudah mencakup: clean -> lower -> filter -> label
-                sentiment, cleaned_display = analyze_single_text(input_text, pos_lex, neg_lex)
-
-            st.subheader("Hasil Analisis:")
-            st.write("**Teks Setelah Preprocessing (Cleaned):**")
-            st.info(f"`{cleaned_display}`") # Tampilkan teks cleaned (bukan lowercase)
-            st.write("**Hasil Sentimen:**")
-
-            # --- PERBAIKAN SINTAKS: elif ---
-            if sentiment == "positif":
-                st.success("✅ Sentimen: POSITIF 😊 (Relevan)")
-            elif sentiment == "negatif":
-                st.error("❌ Sentimen: NEGATIF 😠 (Relevan)")
-            elif sentiment == "tidak relevan":
-                 st.warning("⚠️ Sentimen: TIDAK RELEVAN (Tidak terdeteksi keyword Polri atau terdeteksi keyword TNI).")
-            else: # 'tidak valid'
-                 st.warning("⚠️ Teks tidak valid atau menjadi kosong setelah preprocessing.")
-
+    st.subheader("💬 Analisis Cepat Teks Tunggal")
+    input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
+    if st.button("🔍 Analisis Teks Ini"):
+        if input_text.strip():
+            cleaned = preprocess_text(input_text)
+            if not is_relevant_to_polri(cleaned):
+                st.warning("⚠️ Teks tidak relevan dengan Polri.")
+            else:btambahkan bar
+                sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
+                st.info(f"Teks setelah preprocessing:\n{cleaned}")
+                if sentiment == "positif":
+                    st.success("✅ Sentimen: POSITIF 😊")
+                else:
+                    st.error("❌ Sentimen: NEGATIF 😠")
         else:
-            st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
+            st.warning("Masukkan teks terlebih dahulu.")
 
 # --- Footer ---
 st.markdown("---")
