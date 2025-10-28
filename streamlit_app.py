@@ -1,5 +1,5 @@
 # =====================================================================
-# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML)
+# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL SKRIPSI
 # =====================================================================
 import streamlit as st
 import pandas as pd
@@ -12,7 +12,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score, classification_report, confusion_matrix, roc_curve, auc
+)
 
 tqdm.pandas()
 st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
@@ -22,7 +24,6 @@ st.title("📊 Analisis Sentimen Polri (Lexicon + Machine Learning)")
 # 🔹 1. PREPROCESSING
 # =====================================================================
 def preprocess_text(text):
-    """Membersihkan teks dari URL, mention, hashtag, simbol."""
     if not isinstance(text, str):
         return ""
     text = re.sub(r"http\S+", "", text)
@@ -33,54 +34,15 @@ def preprocess_text(text):
     return text.lower()
 
 def is_relevant_to_polri(text):
-    """Cek relevansi teks terhadap Polri."""
+    """Gunakan keyword asli tanpa diubah."""
     keywords_polri = [
-        # Institusi/Satuan Utama Polri
-        "polri", "kepolisian", "mabes polri", "polda", "polres", "polsek", "polrestabes", "polresta",
-        "brimob", "korbrimob", "gegana", "pelopor",
-        "bareskrim", "ditreskrimum", "ditreskrimsus", "ditresnarkoba", # Direktorat Reserse
-        "korlantas", "ditlantas", "satlantas", # Lalu Lintas
-        "intelkam", "satintelkam", "densus", "densus 88", # Intelijen & Anti-Teror
-        "propam", "divpropam", "paminal", "wabprof", "provos", # Pengawasan Internal
-        "polairud", "korpolairud", # Polisi Air & Udara
-        "sabhara", "samapta", "ditsamapta", "satsamapta", # Samapta/Patroli
-        "binmas", "satbinmas", "bhabinkamtibmas", # Pembinaan Masyarakat
-        "polwan", # Polisi Wanita
-    
-        # Jabatan/Pangkat Umum Polri
-        "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres",
-        "kapolsek", "wakapolsek", "penyidik", "reskrim", "kasat", "kanit",
-        "jenderal polisi", "komjen", "irjen", "brigjen", # Pati
-        "kombes", "akbp", "kompol", # Pamen
-        "akp", "iptu", "ipda", # Pama
-        "aiptu", "aipda", "bripka", "brigpol", "brigadir", "briptu", "bripda", # Bintara
-        "bharada", "bharatu", "bharaka" # Tamtama (umum + Brimob/Polairud)
+        "polri","kepolisian","polda","polres","polsek","brimob","bhabinkamtibmas","bareskrim",
+        "satlantas","propam","polairud","polwan","kapolri","kapolda","kapolres","kapolsek",
+        "reskrim","kasat","penyidik","bhayangkara"
     ]
-
     exclude_keywords = [
-        # Institusi/Satuan Utama TNI
-        "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
-        "kodam", "korem", "kodim", "koramil", # Komando Wilayah AD
-        "kostrad", "pangkostrad", "divif", # Komando Strategis AD
-        "kopassus", "danjenkopassus", # Komando Pasukan Khusus AD
-        "marinir", "kormar", "pasmar", # Korps Marinir AL
-        "kopaska", "denjaka", # Pasukan Khusus AL
-        "paskhas", "korpaskhas", "denbravo", # Pasukan Khas AU
-        "armed", "kavaleri", "zeni", "arhanud", "yonif", # Beberapa kecabangan umum TNI AD
-    
-        # Jabatan/Pangkat Umum TNI
-        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau", # Pimpinan & Jabatan Strategis
-        "pangdam", "danrem", "dandim", "danramil", # Komandan Wilayah
-        "jenderal tni", "laksamana", "marsekal", # Bintang 4
-        "letjen", "laksdya", "marsdya", # Bintang 3
-        "mayjen", "laksda", "marsda", # Bintang 2
-        "brigjen tni", "laksma", "marsma", # Bintang 1
-        "kolonel", "letkol", "mayor", # Pamen
-        "kapten", "lettu", "letda", # Pama
-        "peltu", "pelda", "serma", "serka", "sertu", "serda", # Bintara
-        "kopka", "koptu", "kopda", "praka", "pratu", "prada" # Tamtama
+        "tni","tentara","prajurit","kostrad","kopassus","marinir","ksad","kasad","kkb","au","al","ad"
     ]
-
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
     pattern_exclude = r"\b(?:{})\b".format("|".join(exclude_keywords))
     return bool(re.search(pattern_polri, text)) and not re.search(pattern_exclude, text)
@@ -127,10 +89,8 @@ def preprocess_and_label(df, text_col, pos_lex, neg_lex):
     df["cleaned_text"] = df[text_col].apply(preprocess_text)
     df_filtered = df[df["cleaned_text"].apply(is_relevant_to_polri)]
     total_filtered = len(df_filtered)
-
     if df_filtered.empty:
         return pd.DataFrame(), total_awal, total_filtered, 0
-
     df_filtered["sentiment"] = df_filtered["cleaned_text"].progress_apply(
         lambda x: label_sentiment_two_class(x, pos_lex, neg_lex)
     )
@@ -142,7 +102,6 @@ def preprocess_and_label(df, text_col, pos_lex, neg_lex):
 # =====================================================================
 def train_models(df, max_features=5000, test_size=0.3):
     X, y = df["cleaned_text"], df["sentiment"]
-
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, stratify=y, random_state=42
     )
@@ -171,7 +130,7 @@ def train_models(df, max_features=5000, test_size=0.3):
     }
 
 # =====================================================================
-# 🔹 6. VISUALISASI & EVALUASI
+# 🔹 6. VISUALISASI & EVALUASI TAMBAHAN
 # =====================================================================
 def show_confusion(y_test, preds, model_name):
     cm = confusion_matrix(y_test, preds, labels=["positif", "negatif"])
@@ -190,6 +149,16 @@ def show_wordcloud(df):
         wc = WordCloud(width=800, height=400, background_color="white",
                        colormap=color, stopwords=stopword_set).generate(text)
         st.image(wc.to_array(), caption=f"WordCloud - {label.capitalize()}")
+
+def show_metric_comparison(nb_report, svm_report):
+    metrics = ["precision", "recall", "f1-score"]
+    models = ["Naive Bayes", "SVM"]
+    values = {
+        "Naive Bayes": [nb_report["weighted avg"][m] for m in metrics],
+        "SVM": [svm_report["weighted avg"][m] for m in metrics]
+    }
+    df_metrics = pd.DataFrame(values, index=metrics)
+    st.bar_chart(df_metrics)
 
 # =====================================================================
 # 🔹 7. UI: TAB FILE & INPUT TEKS
@@ -243,9 +212,12 @@ with tab1:
                     show_confusion(results["y_test"], results["svm_pred"], "SVM")
 
                 st.header("📈 Tahap 5: Evaluasi Model")
-                st.subheader("Naive Bayes")
+                st.write("Perbandingan Precision, Recall, F1-Score:")
+                show_metric_comparison(results["nb_report"], results["svm_report"])
+
+                st.subheader("Naive Bayes - Classification Report")
                 st.dataframe(pd.DataFrame(results["nb_report"]).transpose())
-                st.subheader("SVM")
+                st.subheader("SVM - Classification Report")
                 st.dataframe(pd.DataFrame(results["svm_report"]).transpose())
 
                 st.download_button(
@@ -258,35 +230,28 @@ with tab1:
                 st.warning("⚠️ Tidak ada data relevan dengan Polri setelah filter.")
 
 # =================== TAB 2 ===================
+# =================== TAB 2 ===================
 with tab2:
     st.subheader("💬 Analisis Cepat Teks Tunggal")
     input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
-    
+
     if st.button("🔍 Analisis Teks Ini"):
         if input_text.strip():
-            progress = st.progress(0, text="🔄 Memulai analisis teks...")
-
-            # Tahap 1: Preprocessing
-            progress.progress(20, text="🧹 Preprocessing teks...")
+            st.info("⚙️ Memproses teks untuk analisis sentimen...")
             cleaned = preprocess_text(input_text)
 
-            # Tahap 2: Cek relevansi
-            progress.progress(40, text="🔍 Mengecek relevansi teks terhadap Polri...")
-            if not is_relevant_to_polri(cleaned):
-                progress.progress(100, text="⚠️ Teks tidak relevan dengan Polri.")
-                st.warning("⚠️ Teks tidak relevan dengan Polri.")
+            # 🚫 Tidak ada filter relevansi di sini — teks apapun dianalisis
+            sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
+
+            st.write("**Teks Setelah Preprocessing:**")
+            st.info(cleaned)
+
+            st.write("**Hasil Sentimen:**")
+            if sentiment == "positif":
+                st.success("✅ Sentimen: POSITIF 😊")
+            elif sentiment == "negatif":
+                st.error("❌ Sentimen: NEGATIF 😠")
             else:
-                # Tahap 3: Label sentimen
-                progress.progress(70, text="💬 Melakukan analisis sentimen...")
-                sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
-
-                # Tahap 4: Tampilkan hasil
-                progress.progress(100, text="✅ Analisis selesai.")
-                st.info(f"Teks setelah preprocessing:\n{cleaned}")
-                if sentiment == "positif":
-                    st.success("✅ Sentimen: POSITIF 😊")
-                else:
-                    st.error("❌ Sentimen: NEGATIF 😠")
+                st.warning("⚠️ Tidak dapat menentukan sentimen.")
         else:
-            st.warning("Masukkan teks terlebih dahulu.")
-
+            st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
