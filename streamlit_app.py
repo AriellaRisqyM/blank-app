@@ -1,5 +1,5 @@
 # =====================================================================
-# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL SKRIPSI
+# STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL
 # =====================================================================
 import streamlit as st
 import pandas as pd
@@ -19,7 +19,7 @@ st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
 st.title("📊 Analisis Sentimen Polri (Lexicon + Machine Learning)")
 
 # =====================================================================
-# 🔹 1. PREPROCESSING
+# 1. PREPROCESSING
 # =====================================================================
 def preprocess_text(text):
     if not isinstance(text, str):
@@ -33,81 +33,48 @@ def preprocess_text(text):
 
 def is_relevant_to_polri(text):
     keywords_polri = [
-        "polri", "kepolisian", "mabes polri", "polda", "polres", "polsek", "polrestabes", "polresta",
-        "brimob", "korbrimob", "gegana", "pelopor",
+        "polri", "kepolisian", "mabes polri", "polda", "polres", "polsek",
+        "polrestabes", "polresta", "brimob", "korbrimob", "gegana", "pelopor",
         "bareskrim", "ditreskrimum", "ditreskrimsus", "ditresnarkoba",
-        "korlantas", "ditlantas", "satlantas",
-        "intelkam", "satintelkam", "densus", "densus 88",
-        "propam", "divpropam", "paminal", "wabprof", "provos",
-        "polairud", "korpolairud",
-        "sabhara", "samapta", "ditsamapta", "satsamapta",
-        "binmas", "satbinmas", "bhabinkamtibmas",
-        "polwan",
-        "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres",
-        "kapolsek", "wakapolsek", "penyidik", "reskrim", "kasat", "kanit",
-        "jenderal polisi", "komjen", "irjen", "brigjen",
-        "kombes", "akbp", "kompol",
-        "akp", "iptu", "ipda",
-        "aiptu", "aipda", "bripka", "brigpol", "brigadir", "briptu", "bripda",
-        "bharada", "bharatu", "bharaka"
+        "korlantas", "ditlantas", "satlantas", "intelkam", "satintelkam",
+        "densus", "densus 88", "propam", "divpropam", "paminal", "wabprof", "provos",
+        "polairud", "korpolairud", "sabhara", "samapta", "ditsamapta", "satsamapta",
+        "binmas", "satbinmas", "bhabinkamtibmas", "polwan",
+        "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres",
+        "wakapolres", "kapolsek", "wakapolsek", "penyidik", "reskrim", "kasat",
+        "kanit", "jenderal polisi", "komjen", "irjen", "brigjen",
+        "kombes", "akbp", "kompol", "akp", "iptu", "ipda", "aiptu", "aipda",
+        "bripka", "brigpol", "brigadir", "briptu", "bripda", "bharada", "bharatu", "bharaka"
     ]
     exclude_keywords = [
-        "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
-        "kodam", "korem", "kodim", "koramil",
-        "kostrad", "pangkostrad", "divif",
-        "kopassus", "danjenkopassus",
-        "marinir", "kormar", "pasmar",
-        "kopaska", "denjaka",
-        "paskhas", "korpaskhas", "denbravo",
-        "armed", "kavaleri", "zeni", "arhanud", "yonif",
-        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau",
-        "pangdam", "danrem", "dandim", "danramil",
-        "jenderal tni", "laksamana", "marsekal",
-        "letjen", "laksdya", "marsdya",
-        "mayjen", "laksda", "marsda",
-        "brigjen tni", "laksma", "marsma",
-        "kolonel", "letkol", "mayor",
-        "kapten", "lettu", "letda",
-        "peltu", "pelda", "serma", "serka", "sertu", "serda",
-        "kopka", "koptu", "kopda", "praka", "pratu", "prada"
+        "tni", "tentara", "angkatan", "kodam", "korem", "kodim", "koramil",
+        "kostrad", "kopassus", "marinir", "kopaska", "paskhas", "armed",
+        "prajurit", "panglima"
     ]
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
     pattern_exclude = r"\b(?:{})\b".format("|".join(exclude_keywords))
     return bool(re.search(pattern_polri, text)) and not re.search(pattern_exclude, text)
 
 # =====================================================================
-# 🔹 2. LOAD KAMUS & LEXICON (InSet + onpilot + Sentistrength)
+# 2. LOAD LEXICON POSITIF & NEGATIF
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
-    st.info("📚 Memuat kamus dan leksikon sentimen dari semua sumber...")
+    st.info("📚 Memuat kamus positif & negatif...")
 
     urls = {
-        "normalisasi": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/nasalsabila_kamus-alay/_json_colloquial-indonesian-lexicon.txt",
-        "stopword": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/kamus/masdevid_id-stopwords/id.stopwords.02.01.2016.txt",
         "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
         "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
         "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
         "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv",
-        "sentiwords_json": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/_json_sentiwords_id.txt",
-        "boosterwords": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/boosterwords_id.txt",
-        "emoticon": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/emoticon_id.txt",
-        "idioms": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/idioms_id.txt",
-        "negating": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/negatingword.txt",
-        "question": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/questionword.txt",
-        "sentiwords_txt": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/sentiwords_id.txt"
+        "sentiwords_json": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/_json_sentiwords_id.txt"
     }
 
-    kamus_normalisasi = json.loads(requests.get(urls["normalisasi"]).text)
-    stopwords = set(requests.get(urls["stopword"]).text.splitlines())
-
-    # Lexicon gabungan InSet + onpilot
     pos_lex = set(pd.read_csv(urls["fajri_pos"], sep="\t", header=None)[0].dropna().astype(str)) \
               .union(set(pd.read_csv(urls["onpilot_pos"], sep="\t", header=None)[0].dropna().astype(str)))
     neg_lex = set(pd.read_csv(urls["fajri_neg"], sep="\t", header=None)[0].dropna().astype(str)) \
               .union(set(pd.read_csv(urls["onpilot_neg"], sep="\t", header=None)[0].dropna().astype(str)))
 
-    # Sentistrength JSON lexicon
     try:
         senti_json = json.loads(requests.get(urls["sentiwords_json"]).text)
         for k, v in senti_json.items():
@@ -118,24 +85,16 @@ def load_lexicons():
     except:
         st.warning("⚠️ Gagal memuat sentiwords JSON")
 
-    # TXT lexicons: booster, emoticon, idioms, negating, question, sentiwords
-    for key in ["boosterwords", "emoticon", "idioms", "negating", "question", "sentiwords_txt"]:
-        try:
-            words = set(requests.get(urls[key]).text.splitlines())
-            pos_lex.update(words)
-        except:
-            st.warning(f"⚠️ Gagal memuat {key}")
+    st.success(f"✅ Leksikon dimuat: {len(pos_lex)} positif, {len(neg_lex)} negatif.")
+    return pos_lex, neg_lex
 
-    st.success(f"✅ Leksikon dimuat: {len(pos_lex)} positif, {len(neg_lex)} negatif, {len(stopwords)} stopword.")
-    return kamus_normalisasi, stopwords, pos_lex, neg_lex
-
-kamus_normalisasi, stopword_set, pos_lex, neg_lex = load_lexicons()
+pos_lex, neg_lex = load_lexicons()
 
 # =====================================================================
-# 🔹 3. LABELING SENTIMEN
+# 3. LABEL SENTIMEN
 # =====================================================================
 def label_sentiment_two_class(text, pos_lex, neg_lex):
-    tokens = [t for t in text.split() if t not in stopword_set]
+    tokens = text.split()
     pos = sum(1 for t in tokens if t in pos_lex)
     neg = sum(1 for t in tokens if t in neg_lex)
     if pos == 0 and neg == 0:
@@ -143,7 +102,7 @@ def label_sentiment_two_class(text, pos_lex, neg_lex):
     return "positif" if pos >= neg else "negatif"
 
 # =====================================================================
-# 🔹 4. PREPROCESS + LABEL + FILTER
+# 4. PREPROCESS + LABEL + FILTER
 # =====================================================================
 @st.cache_data
 def preprocess_and_label(df, text_col, pos_lex, neg_lex):
@@ -161,7 +120,7 @@ def preprocess_and_label(df, text_col, pos_lex, neg_lex):
     return df_filtered[["cleaned_text", "sentiment"]], total_awal, total_filtered, total_label
 
 # =====================================================================
-# 🔹 5. TRAIN MODEL + TF-IDF + EVALUASI
+# 5. TRAIN MODEL + TF-IDF + EVALUASI
 # =====================================================================
 def train_models(df, max_features=5000, test_size=0.3):
     X, y = df["cleaned_text"], df["sentiment"]
@@ -193,7 +152,7 @@ def train_models(df, max_features=5000, test_size=0.3):
     }
 
 # =====================================================================
-# 🔹 6. VISUALISASI & EVALUASI TAMBAHAN
+# 6. VISUALISASI & EVALUASI
 # =====================================================================
 def show_confusion(y_test, preds, model_name):
     cm = confusion_matrix(y_test, preds, labels=["positif", "negatif"])
@@ -210,7 +169,7 @@ def show_wordcloud(df):
         if not text.strip():
             continue
         wc = WordCloud(width=800, height=400, background_color="white",
-                       colormap=color, stopwords=stopword_set).generate(text)
+                       colormap=color).generate(text)
         st.image(wc.to_array(), caption=f"WordCloud - {label.capitalize()}")
 
 def show_metric_comparison(nb_report, svm_report):
@@ -223,7 +182,7 @@ def show_metric_comparison(nb_report, svm_report):
     st.bar_chart(df_metrics)
 
 # =====================================================================
-# 🔹 7. UI: TAB FILE & INPUT TEKS
+# 7. UI: FILE CSV & TEKS TUNGGAL
 # =====================================================================
 tab1, tab2 = st.tabs(["📂 Analisis File CSV", "⌨️ Analisis Cepat Teks Tunggal"])
 
@@ -276,11 +235,6 @@ with tab1:
                 st.write("Perbandingan Precision, Recall, F1-Score:")
                 show_metric_comparison(results["nb_report"], results["svm_report"])
 
-                st.subheader("Naive Bayes - Classification Report")
-                st.dataframe(pd.DataFrame(results["nb_report"]).transpose())
-                st.subheader("SVM - Classification Report")
-                st.dataframe(pd.DataFrame(results["svm_report"]).transpose())
-
                 st.download_button(
                     "📥 Unduh Hasil Labeling CSV",
                     df_processed.to_csv(index=False).encode("utf-8"),
@@ -296,7 +250,6 @@ with tab2:
 
     if st.button("🔍 Analisis Teks Ini"):
         if input_text.strip():
-            st.info("⚙️ Memproses teks untuk analisis sentimen...")
             cleaned = preprocess_text(input_text)
             sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
             st.write("**Teks Setelah Preprocessing:**")
