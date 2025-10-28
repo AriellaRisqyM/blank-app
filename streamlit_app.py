@@ -13,6 +13,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
+from imblearn.over_sampling import SMOTE
 
 tqdm.pandas()
 st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
@@ -32,6 +34,18 @@ def preprocess_text(text):
     text = re.sub(r"\s+", " ", text).strip()
     return text.lower()
 
+def normalize_and_stem(text, kamus_normalisasi):
+    """Normalisasi slang dan stemming bahasa Indonesia."""
+    factory = StemmerFactory()
+    stemmer = factory.create_stemmer()
+    tokens = text.split()
+    normalized = []
+    for t in tokens:
+        t = kamus_normalisasi.get(t, t)
+        normalized.append(stemmer.stem(t))
+    return " ".join(normalized)
+
+# ⚠️ Sesuai permintaan — fungsi ini tidak diubah sama sekali
 def is_relevant_to_polri(text):
     """Cek relevansi teks terhadap Polri."""
     keywords_polri = [
@@ -46,7 +60,7 @@ def is_relevant_to_polri(text):
         "sabhara", "samapta", "ditsamapta", "satsamapta", # Samapta/Patroli
         "binmas", "satbinmas", "bhabinkamtibmas", # Pembinaan Masyarakat
         "polwan", # Polisi Wanita
-    
+
         # Jabatan/Pangkat Umum Polri
         "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres",
         "kapolsek", "wakapolsek", "penyidik", "reskrim", "kasat", "kanit",
@@ -54,31 +68,29 @@ def is_relevant_to_polri(text):
         "kombes", "akbp", "kompol", # Pamen
         "akp", "iptu", "ipda", # Pama
         "aiptu", "aipda", "bripka", "brigpol", "brigadir", "briptu", "bripda", # Bintara
-        "bharada", "bharatu", "bharaka" # Tamtama (umum + Brimob/Polairud)
+        "bharada", "bharatu", "bharaka" # Tamtama
     ]
 
     exclude_keywords = [
         # Institusi/Satuan Utama TNI
         "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
-        "kodam", "korem", "kodim", "koramil", # Komando Wilayah AD
-        "kostrad", "pangkostrad", "divif", # Komando Strategis AD
-        "kopassus", "danjenkopassus", # Komando Pasukan Khusus AD
-        "marinir", "kormar", "pasmar", # Korps Marinir AL
-        "kopaska", "denjaka", # Pasukan Khusus AL
-        "paskhas", "korpaskhas", "denbravo", # Pasukan Khas AU
-        "armed", "kavaleri", "zeni", "arhanud", "yonif", # Beberapa kecabangan umum TNI AD
-    
-        # Jabatan/Pangkat Umum TNI
-        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau", # Pimpinan & Jabatan Strategis
-        "pangdam", "danrem", "dandim", "danramil", # Komandan Wilayah
-        "jenderal tni", "laksamana", "marsekal", # Bintang 4
-        "letjen", "laksdya", "marsdya", # Bintang 3
-        "mayjen", "laksda", "marsda", # Bintang 2
-        "brigjen tni", "laksma", "marsma", # Bintang 1
-        "kolonel", "letkol", "mayor", # Pamen
-        "kapten", "lettu", "letda", # Pama
-        "peltu", "pelda", "serma", "serka", "sertu", "serda", # Bintara
-        "kopka", "koptu", "kopda", "praka", "pratu", "prada" # Tamtama
+        "kodam", "korem", "kodim", "koramil",
+        "kostrad", "pangkostrad", "divif",
+        "kopassus", "danjenkopassus",
+        "marinir", "kormar", "pasmar",
+        "kopaska", "denjaka",
+        "paskhas", "korpaskhas", "denbravo",
+        "armed", "kavaleri", "zeni", "arhanud", "yonif",
+        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau",
+        "pangdam", "danrem", "dandim", "danramil",
+        "jenderal tni", "laksamana", "marsekal",
+        "letjen", "laksdya", "marsdya",
+        "mayjen", "laksda", "marsda",
+        "brigjen tni", "laksma", "marsma",
+        "kolonel", "letkol", "mayor",
+        "kapten", "lettu", "letda",
+        "peltu", "pelda", "serma", "serka", "sertu", "serda",
+        "kopka", "koptu", "kopda", "praka", "pratu", "prada"
     ]
 
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
@@ -125,6 +137,7 @@ def preprocess_and_label(df, text_col, pos_lex, neg_lex):
     total_awal = len(df)
     df[text_col] = df[text_col].astype(str)
     df["cleaned_text"] = df[text_col].apply(preprocess_text)
+    df["cleaned_text"] = df["cleaned_text"].apply(lambda x: normalize_and_stem(x, kamus_normalisasi))
     df_filtered = df[df["cleaned_text"].apply(is_relevant_to_polri)]
     total_filtered = len(df_filtered)
 
@@ -142,20 +155,23 @@ def preprocess_and_label(df, text_col, pos_lex, neg_lex):
 # =====================================================================
 def train_models(df, max_features=5000, test_size=0.3):
     X, y = df["cleaned_text"], df["sentiment"]
-
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, stratify=y, random_state=42
     )
 
-    vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2))
+    vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1,3), sublinear_tf=True)
     X_train_tfidf = vectorizer.fit_transform(X_train)
     X_test_tfidf = vectorizer.transform(X_test)
 
-    nb = MultinomialNB(alpha=0.3)
+    # Oversampling SMOTE untuk mengatasi imbalance
+    sm = SMOTE(random_state=42)
+    X_train_tfidf, y_train = sm.fit_resample(X_train_tfidf, y_train)
+
+    nb = MultinomialNB(alpha=0.2)
     nb.fit(X_train_tfidf, y_train)
     nb_pred = nb.predict(X_test_tfidf)
 
-    svm = SVC(kernel="linear", probability=True, random_state=42)
+    svm = SVC(kernel="linear", C=2, class_weight="balanced", probability=True, random_state=42)
     svm.fit(X_train_tfidf, y_train)
     svm_pred = svm.predict(X_test_tfidf)
 
@@ -192,11 +208,11 @@ def show_wordcloud(df):
         st.image(wc.to_array(), caption=f"WordCloud - {label.capitalize()}")
 
 # =====================================================================
-# 🔹 7. UI: TAB FILE & INPUT TEKS
+# 🔹 7. UI
 # =====================================================================
 tab1, tab2 = st.tabs(["📂 Analisis File CSV", "⌨️ Analisis Cepat Teks Tunggal"])
 
-# =================== TAB 1 ===================
+# ---------------- TAB 1 ----------------
 with tab1:
     uploaded = st.file_uploader("Unggah Dataset CSV", type=["csv"])
     test_size = st.slider("Pilih Test Size (Data Uji)", 0.1, 0.5, 0.3, step=0.05)
@@ -205,11 +221,9 @@ with tab1:
     if uploaded:
         df = pd.read_csv(uploaded)
         text_col = st.selectbox("Pilih Kolom Teks", df.columns.tolist())
-
         if st.button("🚀 Jalankan Analisis File"):
             st.header("🧩 Tahap 1: Preprocessing & Labeling")
             df_processed, total_awal, total_filtered, total_label = preprocess_and_label(df, text_col, pos_lex, neg_lex)
-
             colA, colB, colC = st.columns(3)
             colA.metric("Total Data Awal", total_awal)
             colB.metric("Data Setelah Filter Polri", total_filtered)
@@ -257,21 +271,19 @@ with tab1:
             else:
                 st.warning("⚠️ Tidak ada data relevan dengan Polri setelah filter.")
 
-# =================== TAB 2 ===================
+# ---------------- TAB 2 ----------------
 with tab2:
     st.subheader("💬 Analisis Cepat Teks Tunggal")
     input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
     if st.button("🔍 Analisis Teks Ini"):
         if input_text.strip():
             cleaned = preprocess_text(input_text)
-            if not is_relevant_to_polri(cleaned):
-                st.warning("⚠️ Teks tidak relevan dengan Polri.")
+            cleaned = normalize_and_stem(cleaned, kamus_normalisasi)
+            sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
+            st.info(f"Teks setelah preprocessing:\n{cleaned}")
+            if sentiment == "positif":
+                st.success("✅ Sentimen: POSITIF 😊")
             else:
-                sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
-                st.info(f"Teks setelah preprocessing:\n{cleaned}")
-                if sentiment == "positif":
-                    st.success("✅ Sentimen: POSITIF 😊")
-                else:
-                    st.error("❌ Sentimen: NEGATIF 😠")
+                st.error("❌ Sentimen: NEGATIF 😠")
         else:
             st.warning("Masukkan teks terlebih dahulu.")
