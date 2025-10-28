@@ -179,4 +179,134 @@ def train_models(df, max_features=5000, test_size=0.3):
 
     svm = SVC(kernel="linear", probability=True, random_state=42)
     svm.fit(X_train_tfidf, y_train)
-    svm_pred =
+    svm_pred = svm.predict(X_test_tfidf)
+
+    nb_report = classification_report(y_test, nb_pred, output_dict=True)
+    svm_report = classification_report(y_test, svm_pred, output_dict=True)
+
+    return {
+        "vectorizer": vectorizer, "X_train": X_train, "X_test": X_test,
+        "y_train": y_train, "y_test": y_test,
+        "nb": nb, "svm": svm,
+        "nb_pred": nb_pred, "svm_pred": svm_pred,
+        "nb_report": nb_report, "svm_report": svm_report
+    }
+
+# =====================================================================
+# 🔹 6. VISUALISASI & EVALUASI TAMBAHAN
+# =====================================================================
+def show_confusion(y_test, preds, model_name):
+    cm = confusion_matrix(y_test, preds, labels=["positif", "negatif"])
+    fig, ax = plt.subplots()
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=["Positif", "Negatif"],
+                yticklabels=["Positif", "Negatif"])
+    ax.set_title(f"Confusion Matrix - {model_name}")
+    st.pyplot(fig)
+
+def show_wordcloud(df):
+    for label, color in [("positif", "Greens"), ("negatif", "Reds")]:
+        text = " ".join(df[df["sentiment"] == label]["cleaned_text"].values)
+        if not text.strip():
+            continue
+        wc = WordCloud(width=800, height=400, background_color="white",
+                       colormap=color, stopwords=stopword_set).generate(text)
+        st.image(wc.to_array(), caption=f"WordCloud - {label.capitalize()}")
+
+def show_metric_comparison(nb_report, svm_report):
+    metrics = ["precision", "recall", "f1-score"]
+    values = {
+        "Naive Bayes": [nb_report["weighted avg"][m] for m in metrics],
+        "SVM": [svm_report["weighted avg"][m] for m in metrics]
+    }
+    df_metrics = pd.DataFrame(values, index=metrics)
+    st.bar_chart(df_metrics)
+
+# =====================================================================
+# 🔹 7. UI: TAB FILE & INPUT TEKS
+# =====================================================================
+tab1, tab2 = st.tabs(["📂 Analisis File CSV", "⌨️ Analisis Cepat Teks Tunggal"])
+
+with tab1:
+    uploaded = st.file_uploader("Unggah Dataset CSV", type=["csv"])
+    test_size = st.slider("Pilih Test Size (Data Uji)", 0.1, 0.5, 0.3, step=0.05)
+    max_feat = st.slider("Max Features TF-IDF", 1000, 10000, 5000, step=1000)
+
+    if uploaded:
+        df = pd.read_csv(uploaded)
+        text_col = st.selectbox("Pilih Kolom Teks", df.columns.tolist())
+
+        if st.button("🚀 Jalankan Analisis File"):
+            st.header("🧩 Tahap 1: Preprocessing & Labeling")
+            df_processed, total_awal, total_filtered, total_label = preprocess_and_label(df, text_col, pos_lex, neg_lex)
+
+            colA, colB, colC = st.columns(3)
+            colA.metric("Total Data Awal", total_awal)
+            colB.metric("Data Setelah Filter Polri", total_filtered)
+            colC.metric("Data yang Dilabeli", total_label)
+
+            if not df_processed.empty:
+                st.dataframe(df_processed.head(10))
+                st.bar_chart(df_processed["sentiment"].value_counts())
+
+                st.header("🧠 Tahap 2: TF-IDF dan Pembagian Data")
+                results = train_models(df_processed, max_feat, test_size)
+                st.success("✅ TF-IDF dan split data berhasil!")
+
+                colD, colE = st.columns(2)
+                colD.metric("Data Latih", len(results["X_train"]))
+                colE.metric("Data Uji", len(results["X_test"]))
+
+                st.header("🌈 Tahap 3: WordCloud Sentimen")
+                show_wordcloud(df_processed)
+
+                st.header("🤖 Tahap 4: Pelatihan Model Naive Bayes & SVM")
+                nb_acc = accuracy_score(results["y_test"], results["nb_pred"])
+                svm_acc = accuracy_score(results["y_test"], results["svm_pred"])
+                st.metric("Akurasi Naive Bayes", f"{nb_acc*100:.2f}%")
+                st.metric("Akurasi SVM", f"{svm_acc*100:.2f}%")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    show_confusion(results["y_test"], results["nb_pred"], "Naive Bayes")
+                with col2:
+                    show_confusion(results["y_test"], results["svm_pred"], "SVM")
+
+                st.header("📈 Tahap 5: Evaluasi Model")
+                st.write("Perbandingan Precision, Recall, F1-Score:")
+                show_metric_comparison(results["nb_report"], results["svm_report"])
+
+                st.subheader("Naive Bayes - Classification Report")
+                st.dataframe(pd.DataFrame(results["nb_report"]).transpose())
+                st.subheader("SVM - Classification Report")
+                st.dataframe(pd.DataFrame(results["svm_report"]).transpose())
+
+                st.download_button(
+                    "📥 Unduh Hasil Labeling CSV",
+                    df_processed.to_csv(index=False).encode("utf-8"),
+                    "hasil_sentimen_polri.csv",
+                    "text/csv"
+                )
+            else:
+                st.warning("⚠️ Tidak ada data relevan dengan Polri setelah filter.")
+
+with tab2:
+    st.subheader("💬 Analisis Cepat Teks Tunggal")
+    input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
+
+    if st.button("🔍 Analisis Teks Ini"):
+        if input_text.strip():
+            st.info("⚙️ Memproses teks untuk analisis sentimen...")
+            cleaned = preprocess_text(input_text)
+            sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
+            st.write("**Teks Setelah Preprocessing:**")
+            st.info(cleaned)
+            st.write("**Hasil Sentimen:**")
+            if sentiment == "positif":
+                st.success("✅ Sentimen: POSITIF 😊")
+            elif sentiment == "negatif":
+                st.error("❌ Sentimen: NEGATIF 😠")
+            else:
+                st.warning("⚠️ Netral / Tidak dapat menentukan sentimen.")
+        else:
+            st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
