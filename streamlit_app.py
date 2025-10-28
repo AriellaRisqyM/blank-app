@@ -36,7 +36,7 @@ def preprocess_text(text):
     text = re.sub(r"#", " ", text) # Simpan kata dari hashtag
     text = re.sub(r"[^a-zA-Z\s]", "", text) # Hanya alfabet dan spasi
     text = re.sub(r"\s+", " ", text).strip() # Hapus spasi berlebih
-    # Case folding (lowercase) akan dilakukan nanti
+    # Case folding (lowercase) akan dilakukan nanti di fungsi utama
     return text
 
 def is_relevant_to_polri(text_lower):
@@ -116,7 +116,7 @@ def load_lexicons():
     neg_lex = set()
 
     try:
-        # PERBAIKAN: Muat fajri91 (header=None, kolom 0)
+        # Muat fajri91 (header=None, kolom 0)
         pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_pos"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_neg"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         st.info("   -> OK: Leksikon fajri91 dimuat.")
@@ -124,7 +124,7 @@ def load_lexicons():
         st.warning(f"⚠️ Gagal memuat leksikon fajri91: {e}")
 
     try:
-        # PERBAIKAN: Muat onpilot (header=0, kolom 'word')
+        # Muat onpilot (header=0, kolom 'word')
         pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_pos"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_neg"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         st.info("   -> OK: Leksikon onpilot dimuat.")
@@ -157,7 +157,6 @@ def label_sentiment_two_class(text_lower, pos_lex, neg_lex):
     Memberi label Positif/Negatif berdasarkan jumlah kata (input sudah lowercase).
     Default ke negatif jika skor 0 atau negatif.
     """
-    # Teks sudah diasumsikan lowercase dan string valid
     if not text_lower.strip():
         return 'negatif' # Default jika teks kosong
 
@@ -186,6 +185,7 @@ def preprocess_and_label(_df, text_col, _pos_lex, _neg_lex):
 
     # Langkah 1: Preprocessing (Clean + Case Fold)
     progress_bar.progress(1/3, text="1/3 Preprocessing (Clean & Case Fold)...")
+    # Terapkan pada kolom teks mentah yang dipilih
     df_processed['cleaned_text'] = df_processed[text_col].astype(str).progress_apply(preprocess_text)
     df_processed.dropna(subset=['cleaned_text'], inplace=True)
     df_processed = df_processed[df_processed['cleaned_text'].str.strip().astype(bool)]
@@ -197,7 +197,6 @@ def preprocess_and_label(_df, text_col, _pos_lex, _neg_lex):
 
     # Langkah 2: Filter Polri (Input 'case_folded_text')
     progress_bar.progress(2/3, text="2/3 Memfilter data Polri...")
-    # --- PERBAIKAN: Terapkan filter pada 'case_folded_text' ---
     df_filtered = df_processed[df_processed["case_folded_text"].progress_apply(is_relevant_to_polri)].copy()
     total_filtered = len(df_filtered)
     if df_filtered.empty:
@@ -207,7 +206,6 @@ def preprocess_and_label(_df, text_col, _pos_lex, _neg_lex):
 
     # Langkah 3: Labeling (pada 'case_folded_text' yang sudah difilter)
     progress_bar.progress(3/3, text="3/3 Pelabelan Sentimen (Lexicon)...")
-    # --- PERBAIKAN: Terapkan label pada 'case_folded_text' ---
     df_filtered["sentiment"] = df_filtered["case_folded_text"].progress_apply(
         lambda x: label_sentiment_two_class(x, _pos_lex, _neg_lex)
     )
@@ -232,7 +230,7 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
          st.error("Hanya ditemukan 1 kelas sentimen. Tidak dapat melatih model.")
          return None
 
-    # --- PERBAIKAN: Gunakan 'case_folded_text' untuk TF-IDF ---
+    # Input fitur adalah teks yg sudah case folding
     X, y = _df_processed["case_folded_text"], _df_processed["sentiment"]
     labels = sorted(y.unique()) # Dapatkan label unik (harus ['negatif', 'positif'])
 
@@ -264,7 +262,7 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
     nb_pred = nb.predict(X_test_tfidf)
     nb_acc = accuracy_score(y_test, nb_pred)
     nb_report = classification_report(y_test, nb_pred, labels=labels, output_dict=True, zero_division=0)
-    results['nb'] = {'acc': nb_acc, 'report': nb_report, 'model': nb, 'preds': nb_pred}
+    results['nb'] = {'acc': nb_acc, 'report': nb_report, 'model': nb, 'preds': nb_pred} # Simpan 'preds'
     st.write(f"Akurasi Naive Bayes: {nb_acc*100:.2f}%")
 
     # SVM (Linear Kernel)
@@ -274,7 +272,7 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
     svm_pred = svm.predict(X_test_tfidf)
     svm_acc = accuracy_score(y_test, svm_pred)
     svm_report = classification_report(y_test, svm_pred, labels=labels, output_dict=True, zero_division=0)
-    results['svm'] = {'acc': svm_acc, 'report': svm_report, 'model': svm, 'preds': svm_pred}
+    results['svm'] = {'acc': svm_acc, 'report': svm_report, 'model': svm, 'preds': svm_pred} # Simpan 'preds'
     st.write(f"Akurasi SVM: {svm_acc*100:.2f}%")
 
     # Simpan data split dan vectorizer
@@ -291,15 +289,15 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
 # =====================================================================
 def show_confusion(y_test, preds, model_name, labels):
     """Menampilkan confusion matrix."""
-    # Pastikan labels sesuai dengan data, misal ['negatif', 'positif']
+    # Pastikan labels sesuai dengan data
     cm_labels = sorted(list(set(y_test) | set(preds)))
-    if not all(l in labels for l in cm_labels):
-         labels = cm_labels # Gunakan label aktual jika berbeda
+    # Gunakan 'labels' dari 'results' jika tersedia, jika tidak, gunakan 'cm_labels'
+    effective_labels = labels if all(l in cm_labels for l in labels) else cm_labels
     
-    cm = confusion_matrix(y_test, preds, labels=labels)
+    cm = confusion_matrix(y_test, preds, labels=effective_labels)
     fig, ax = plt.subplots(figsize=(5, 4)) # Ukuran disesuaikan
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=labels, yticklabels=labels, ax=ax)
+                xticklabels=effective_labels, yticklabels=effective_labels, ax=ax)
     ax.set_title(f"Confusion Matrix - {model_name}")
     ax.set_xlabel("Predicted Label")
     ax.set_ylabel("Actual Label")
@@ -311,7 +309,7 @@ def show_wordcloud(_df):
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Positif 😊")
-        # --- PERBAIKAN: Gunakan 'case_folded_text' untuk word cloud ---
+        # Gunakan 'case_folded_text' untuk word cloud
         text_pos = " ".join(_df[_df["sentiment"] == "positif"]["case_folded_text"].values)
         if text_pos.strip():
             try:
@@ -323,7 +321,7 @@ def show_wordcloud(_df):
             st.write("Tidak ada data positif untuk word cloud.")
     with col2:
         st.subheader("Negatif 😠")
-        # --- PERBAIKAN: Gunakan 'case_folded_text' untuk word cloud ---
+        # Gunakan 'case_folded_text' untuk word cloud
         text_neg = " ".join(_df[_df["sentiment"] == "negatif"]["case_folded_text"].values)
         if text_neg.strip():
             try:
@@ -346,7 +344,32 @@ def show_metric_comparison(nb_report, svm_report):
     st.bar_chart(df_metrics)
 
 # =====================================================================
-# 7. UI: FILE CSV & TEKS TUNGGAL
+# 7. ANALISIS TEKS TUNGGAL (UNTUK TAB 2)
+# =====================================================================
+def analyze_single_text(text, positive_lexicon, negative_lexicon):
+    """
+    Analisis cepat untuk input teks tunggal.
+    Menerapkan: clean -> lower -> filter -> label
+    """
+    if not text or not text.strip():
+        return "tidak valid", "" # Kasus input kosong
+
+    text_clean = preprocess_text(text)
+    if not text_clean:
+         return "tidak valid", "" # Kasus kosong setelah cleaning
+
+    text_lower = text_clean.lower() # Case folding untuk filter dan labeling
+
+    # Terapkan filter
+    if not is_relevant_to_polri(text_lower):
+        return "tidak relevan", text_clean # Kembalikan teks cleaned asli
+
+    # Jika relevan, lanjutkan pelabelan
+    sentiment = label_sentiment_two_class(text_lower, positive_lexicon, negative_lexicon)
+    return sentiment, text_clean # Kembalikan teks cleaned asli
+
+# =====================================================================
+# 8. UI: FILE CSV & TEKS TUNGGAL
 # =====================================================================
 # State management
 if 'processed_df' not in st.session_state: st.session_state.processed_df = None
@@ -442,20 +465,25 @@ with tab1:
                     colE.metric("Akurasi SVM (Linear)", f"{results['svm']['acc']:.2%}")
 
                     st.subheader("Perbandingan Metrik (Weighted Avg)")
-                    show_metric_comparison(results["nb_report"], results["svm_report"])
+                    # --- PERBAIKAN KEYERROR ---
+                    show_metric_comparison(results["nb"]["report"], results["svm"]["report"])
                     
                     st.subheader("Confusion Matrix")
                     colF, colG = st.columns(2)
                     with colF:
-                        show_confusion(results["y_test"], results["nb_preds"], "Naive Bayes", results["labels"])
+                        # --- PERBAIKAN KEYERROR ---
+                        show_confusion(results["y_test"], results["nb"]["preds"], "Naive Bayes", results["labels"])
                     with colG:
-                        show_confusion(results["y_test"], results["svm_preds"], "SVM (Linear)", results["labels"])
+                        # --- PERBAIKAN KEYERROR ---
+                        show_confusion(results["y_test"], results["svm"]["preds"], "SVM (Linear)", results["labels"])
                     
                     st.subheader("Laporan Klasifikasi Detail")
                     with st.expander("Lihat Laporan Naive Bayes"):
-                        st.dataframe(pd.DataFrame(results['nb_report']).transpose())
+                        # --- PERBAIKAN KEYERROR ---
+                        st.dataframe(pd.DataFrame(results['nb']['report']).transpose())
                     with st.expander("Lihat Laporan SVM (Linear)"):
-                        st.dataframe(pd.DataFrame(results['svm_report']).transpose())
+                        # --- PERBAIKAN KEYERROR ---
+                        st.dataframe(pd.DataFrame(results['svm']['report']).transpose())
 
                     # Download button
                     st.header("📥 4. Unduh Hasil Labeling")
@@ -483,7 +511,7 @@ with tab1:
         st.info("Silakan unggah file CSV untuk memulai analisis.")
 
 # ==============================================================================
-# 🟩 TAB 2: INPUT TEKS (Fungsi 'analyze_single_text' sudah diperbarui)
+# 🟩 TAB 2: INPUT TEKS (PERBAIKAN LOGIKA)
 # ==============================================================================
 with tab2:
     st.header("💬 Analisis Cepat Teks Tunggal")
@@ -492,28 +520,24 @@ with tab2:
     if st.button("🔍 Analisis Teks Ini", key="button_analyze_single"):
         if input_text and input_text.strip():
             with st.spinner("Menganalisis teks..."):
-                # PERBAIKAN: Panggil preprocess_text (lowercase) dan is_relevant_to_polri
-                cleaned_lower = preprocess_text(input_text).lower()
-                is_relevant = is_relevant_to_polri(cleaned_lower)
-                
-                sentiment = "tidak relevan" # Default
-                if is_relevant:
-                    # Jika relevan, baru label sentimennya
-                    sentiment = label_sentiment_two_class(cleaned_lower, pos_lex, neg_lex)
+                # --- PERBAIKAN LOGIKA: Panggil fungsi analyze_single_text ---
+                # Fungsi ini sudah mencakup: clean -> lower -> filter -> label
+                sentiment, cleaned_display = analyze_single_text(input_text, pos_lex, neg_lex)
 
             st.subheader("Hasil Analisis:")
-            st.write("**Teks Setelah Preprocessing (Lowercase):**")
-            st.info(f"`{cleaned_lower}`") # Tampilkan teks cleaned & lowercase
+            st.write("**Teks Setelah Preprocessing (Cleaned):**")
+            st.info(f"`{cleaned_display}`") # Tampilkan teks cleaned (bukan lowercase)
             st.write("**Hasil Sentimen:**")
 
+            # --- PERBAIKAN SINTAKS: elif ---
             if sentiment == "positif":
                 st.success("✅ Sentimen: POSITIF 😊 (Relevan)")
             elif sentiment == "negatif":
                 st.error("❌ Sentimen: NEGATIF 😠 (Relevan)")
             elif sentiment == "tidak relevan":
                  st.warning("⚠️ Sentimen: TIDAK RELEVAN (Tidak terdeteksi keyword Polri atau terdeteksi keyword TNI).")
-            # else: # 'tidak valid' (sudah ditangani oleh input_text.strip())
-            #      st.warning("⚠️ Teks tidak valid atau menjadi kosong setelah preprocessing.")
+            else: # 'tidak valid'
+                 st.warning("⚠️ Teks tidak valid atau menjadi kosong setelah preprocessing.")
 
         else:
             st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
