@@ -1,6 +1,6 @@
-## =====================================================================
+# =====================================================================
 # STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL 2 KELAS
-# Leksikon: HANYA fajri91/InSet
+# Leksikon: HANYA InSet (fajri91 + onpilot)
 # =====================================================================
 import streamlit as st
 import pandas as pd
@@ -24,7 +24,7 @@ tqdm.pandas()
 # Konfigurasi Halaman (Harus jadi perintah streamlit pertama)
 st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
 st.title("📊 Analisis Sentimen Polri (Lexicon + ML) — 2 Kelas")
-st.info("Menggunakan Leksikon InSet (fajri91) untuk pelabelan.")
+st.info("Menggunakan Leksikon InSet (fajri91 + onpilot) untuk pelabelan.")
 
 
 # =====================================================================
@@ -78,16 +78,20 @@ def is_relevant_to_polri(text_lower):
     return bool(re.search(pattern_polri, text_lower)) and not re.search(pattern_exclude, text_lower)
 
 # =====================================================================
-# 2. LOAD LEXICON POSITIF & NEGATIF (HANYA FAJRI91)
+# 2. LOAD LEXICON POSITIF & NEGATIF (HANYA InSet fajri91 + onpilot)
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
-    """Memuat leksikon InSet (HANYA fajri91)."""
-    st.info("📚 Memuat kamus positif & negatif (fajri91/InSet)...")
+    """Memuat dan menggabungkan leksikon InSet (fajri91 + onpilot)."""
+    st.info("📚 Memuat kamus positif & negatif (fajri91/InSet + onpilot/InSet)...")
     urls = {
         "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
-        "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv"
+        "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
+        "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
+        "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv",
+        # URL SentiStrength JSON dihapus
     }
+
     pos_lex = set()
     neg_lex = set()
 
@@ -95,12 +99,21 @@ def load_lexicons():
         # Muat fajri91 (header=None, kolom 0)
         pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_pos"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_neg"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        st.success(f"✅ Leksikon dimuat: {len(pos_lex)} kata positif unik, {len(neg_lex)} kata negatif unik.")
+        st.info("   -> OK: Leksikon fajri91 dimuat.")
     except Exception as e:
-        st.error(f"⚠️ Gagal memuat leksikon fajri91: {e}")
-        # Kembalikan set kosong jika gagal total
-        return set(), set()
+        st.warning(f"⚠️ Gagal memuat leksikon fajri91: {e}")
 
+    try:
+        # Muat onpilot (header=0, kolom 'word')
+        pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_pos"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
+        neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_neg"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
+        st.info("   -> OK: Leksikon onpilot dimuat.")
+    except Exception as e:
+        st.warning(f"⚠️ Gagal memuat leksikon onpilot: {e}")
+
+    # --- SentiWords JSON Dihapus ---
+    
+    st.success(f"✅ Leksikon dimuat: {len(pos_lex)} kata positif unik, {len(neg_lex)} kata negatif unik.")
     return pos_lex, neg_lex
 
 # Muat leksikon saat aplikasi dimulai
@@ -121,10 +134,8 @@ def label_sentiment_two_class(text_lower, pos_lex, neg_lex):
     pos = sum(1 for t in tokens if t in pos_lex)
     neg = sum(1 for t in tokens if t in neg_lex)
 
-    # Logika 2 Kelas Sederhana:
-    # Jika skor positif LEBIH BESAR dari negatif -> positif
-    # Jika tidak (termasuk jika sama atau keduanya 0) -> negatif
-    if pos > neg:
+    # --- PERBAIKAN LOGIKA: pos >= neg (sesuai kode yang Anda berikan) ---
+    if pos >= neg:
         return "positif"
     else:
         return "negatif"
@@ -259,8 +270,9 @@ def show_wordcloud(_df):
         text_pos = " ".join(_df[_df["sentiment"] == "positif"]["case_folded_text"].values)
         if text_pos.strip():
             try:
+                # Ganti use_column_width dengan use_container_width
                 wc_pos = WordCloud(width=600, height=300, background_color="white", colormap="Greens").generate(text_pos)
-                st.image(wc_pos.to_array(), use_column_width=True) # use_column_width masih umum
+                st.image(wc_pos.to_array(), use_container_width=True) 
             except Exception as e:
                 st.warning(f"Gagal membuat word cloud positif: {e}")
         else:
@@ -270,8 +282,9 @@ def show_wordcloud(_df):
         text_neg = " ".join(_df[_df["sentiment"] == "negatif"]["case_folded_text"].values)
         if text_neg.strip():
             try:
+                # Ganti use_column_width dengan use_container_width
                 wc_neg = WordCloud(width=600, height=300, background_color="white", colormap="Reds").generate(text_neg)
-                st.image(wc_neg.to_array(), use_column_width=True) # use_column_width masih umum
+                st.image(wc_neg.to_array(), use_container_width=True) 
             except Exception as e:
                 st.warning(f"Gagal membuat word cloud negatif: {e}")
         else:
