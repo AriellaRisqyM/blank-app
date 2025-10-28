@@ -59,26 +59,8 @@ def is_relevant_to_polri(text):
 
     exclude_keywords = [
         # Institusi/Satuan Utama TNI
-        "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
-        "kodam", "korem", "kodim", "koramil", # Komando Wilayah AD
-        "kostrad", "pangkostrad", "divif", # Komando Strategis AD
-        "kopassus", "danjenkopassus", # Komando Pasukan Khusus AD
-        "marinir", "kormar", "pasmar", # Korps Marinir AL
-        "kopaska", "denjaka", # Pasukan Khusus AL
-        "paskhas", "korpaskhas", "denbravo", # Pasukan Khas AU
-        "armed", "kavaleri", "zeni", "arhanud", "yonif", # Beberapa kecabangan umum TNI AD
-    
-        # Jabatan/Pangkat Umum TNI
-        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau", # Pimpinan & Jabatan Strategis
-        "pangdam", "danrem", "dandim", "danramil", # Komandan Wilayah
-        "jenderal tni", "laksamana", "marsekal", # Bintang 4
-        "letjen", "laksdya", "marsdya", # Bintang 3
-        "mayjen", "laksda", "marsda", # Bintang 2
-        "brigjen tni", "laksma", "marsma", # Bintang 1
-        "kolonel", "letkol", "mayor", # Pamen
-        "kapten", "lettu", "letda", # Pama
-        "peltu", "pelda", "serma", "serka", "sertu", "serda", # Bintara
-        "kopka", "koptu", "kopda", "praka", "pratu", "prada" # Tamtama
+        "tni"
+        
     ]
 
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
