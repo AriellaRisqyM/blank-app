@@ -9,3 +9,4 @@ seaborn
 wordcloud
 tqdm
 openpyxl
+imbalanced-learn
