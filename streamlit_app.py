@@ -230,3 +230,4 @@ with tab2:
                 st.error("❌ Sentimen: NEGATIF 😠")
         else:
             st.warning("Masukkan teks terlebih dahulu.")
+
