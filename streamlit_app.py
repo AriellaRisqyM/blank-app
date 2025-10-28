@@ -521,7 +521,7 @@ with tab2:
             cleaned = preprocess_text(input_text)
             if not is_relevant_to_polri(cleaned):
                 st.warning("⚠️ Teks tidak relevan dengan Polri.")
-            else:btambahkan bar
+            else:
                 sentiment = label_sentiment_two_class(cleaned, pos_lex, neg_lex)
                 st.info(f"Teks setelah preprocessing:\n{cleaned}")
                 if sentiment == "positif":
