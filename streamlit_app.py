@@ -1,11 +1,12 @@
 # =====================================================================
 # STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL 2 KELAS
+# Leksikon: HANYA fajri91/InSet
 # =====================================================================
 import streamlit as st
 import pandas as pd
 import requests
 import re
-import json
+import json # Diperlukan (meskipun JSON tidak dimuat, impor aman)
 import io # Diperlukan untuk membaca data dari requests
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -17,12 +18,14 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-# Inisialisasi tqdm untuk pandas (meskipun di Streamlit mungkin tidak tampil di progress_apply)
+# Inisialisasi tqdm untuk pandas
 tqdm.pandas()
 
 # Konfigurasi Halaman (Harus jadi perintah streamlit pertama)
 st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
 st.title("📊 Analisis Sentimen Polri (Lexicon + ML) — 2 Kelas")
+st.info("Menggunakan Leksikon InSet (fajri91) untuk pelabelan.")
+
 
 # =====================================================================
 # 1. PREPROCESSING & FILTER
@@ -44,74 +47,47 @@ def is_relevant_to_polri(text_lower):
     Mengecek relevansi teks (yang sudah lowercase) dengan keyword Polri
     dan mengecualikan keyword TNI.
     """
-    # Menggunakan daftar keyword yang sudah diperluas
+    # Daftar keyword Polri
     keywords_polri = [
-        # Institusi/Satuan Utama Polri
         "polri", "kepolisian", "mabes polri", "polda", "polres", "polsek", "polrestabes", "polresta",
-        "brimob", "korbrimob", "gegana", "pelopor",
-        "bareskrim", "ditreskrimum", "ditreskrimsus", "ditresnarkoba", # Direktorat Reserse
-        "korlantas", "ditlantas", "satlantas", # Lalu Lintas
-        "intelkam", "satintelkam", "densus", "densus 88", # Intelijen & Anti-Teror
-        "propam", "divpropam", "paminal", "wabprof", "provos", # Pengawasan Internal
-        "polairud", "korpolairud", # Polisi Air & Udara
-        "sabhara", "samapta", "ditsamapta", "satsamapta", # Samapta/Patroli
-        "binmas", "satbinmas", "bhabinkamtibmas", "polwan", # Polisi Wanita
-
-        # Jabatan/Pangkat Umum Polri
-        "polisi", "kapolri", "wakapolri", "kapolda", "wakapolda", "kapolres", "wakapolres", "kapolsek", "wakapolsek",
-        "penyidik", "reskrim", "kasat", "kanit",
-        "jenderal polisi", "komjen", "irjen", "brigjen", # Pati
-        "kombes", "akbp", "kompol", # Pamen
-        "akp", "iptu", "ipda", # Pama
-        "aiptu", "aipda", "bripka", "brigpol", "brigadir", "briptu", "bripda", # Bintara
-        "bharada", "bharatu", "bharaka" # Tamtama (umum + Brimob/Polairud)
+        "brimob", "korbrimob", "gegana", "pelopor", "bareskrim", "ditreskrimum", "ditreskrimsus",
+        "ditresnarkoba", "korlantas", "ditlantas", "satlantas", "intelkam", "satintelkam",
+        "densus", "densus 88", "propam", "divpropam", "paminal", "wabprof", "provos",
+        "polairud", "korpolairud", "sabhara", "samapta", "ditsamapta", "satsamapta",
+        "binmas", "satbinmas", "bhabinkamtibmas", "polwan", "polisi", "kapolri", "wakapolri",
+        "kapolda", "wakapolda", "kapolres", "wakapolres", "kapolsek", "wakapolsek", "penyidik",
+        "reskrim", "kasat", "kanit", "jenderal polisi", "komjen", "irjen", "brigjen", "kombes",
+        "akbp", "kompol", "akp", "iptu", "ipda", "aiptu", "aipda", "bripka", "brigpol",
+        "brigadir", "briptu", "bripda", "bharada", "bharatu", "bharaka"
     ]
+    # Daftar keyword TNI (Eksklusi)
     exclude_keywords = [
-        # Institusi/Satuan Utama TNI
         "tni", "tentara", "angkatandarat", "angkatanlaut", "angkatanudara", "tni ad", "tni al", "tni au",
-        "kodam", "korem", "kodim", "koramil", # Komando Wilayah AD
-        "kostrad", "pangkostrad", "divif", # Komando Strategis AD
-        "kopassus", "danjenkopassus", # Komando Pasukan Khusus AD
-        "marinir", "kormar", "pasmar", # Korps Marinir AL
-        "kopaska", "denjaka", # Pasukan Khusus AL
-        "paskhas", "korpaskhas", "denbravo", # Pasukan Khas AU
-        "armed", "kavaleri", "zeni", "arhanud", "yonif", # Beberapa kecabangan umum TNI AD
-
-        # Jabatan/Pangkat Umum TNI
-        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau", # Pimpinan & Jabatan Strategis
-        "pangdam", "danrem", "dandim", "danramil", # Komandan Wilayah
-        "jenderal tni", "laksamana", "marsekal", # Bintang 4
-        "letjen", "laksdya", "marsdya", # Bintang 3
-        "mayjen", "laksda", "marsda", # Bintang 2
-        "brigjen tni", "laksma", "marsma", # Bintang 1
-        "kolonel", "letkol", "mayor", # Pamen
-        "kapten", "lettu", "letda", # Pama
-        "peltu", "pelda", "serma", "serka", "sertu", "serda", # Bintara
-        "kopka", "koptu", "kopda", "praka", "pratu", "prada" # Tamtama
+        "kodam", "korem", "kodim", "koramil", "kostrad", "pangkostrad", "divif", "kopassus",
+        "danjenkopassus", "marinir", "kormar", "pasmar", "kopaska", "denjaka", "paskhas",
+        "korpaskhas", "denbravo", "armed", "kavaleri", "zeni", "arhanud", "yonif",
+        "prajurit", "panglima tni", "ksad", "kasad", "ksal", "kasal", "ksau", "kasau",
+        "pangdam", "danrem", "dandim", "danramil", "jenderal tni", "laksamana", "marsekal",
+        "letjen", "laksdya", "marsdya", "mayjen", "laksda", "marsda", "brigjen tni", "laksma",
+        "marsma", "kolonel", "letkol", "mayor", "kapten", "lettu", "letda", "peltu", "pelda",
+        "serma", "serka", "sertu", "serda", "kopka", "koptu", "kopda", "praka", "pratu", "prada"
     ]
 
-    # Buat pola regex
     pattern_polri = r"\b(?:{})\b".format("|".join(keywords_polri))
     pattern_exclude = r"\b(?:{})\b".format("|".join(exclude_keywords))
-
-    # Cek kecocokan (teks sudah diasumsikan lowercase)
     return bool(re.search(pattern_polri, text_lower)) and not re.search(pattern_exclude, text_lower)
 
 # =====================================================================
-# 2. LOAD LEXICON POSITIF & NEGATIF (GABUNGAN)
+# 2. LOAD LEXICON POSITIF & NEGATIF (HANYA FAJRI91)
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
-    """Memuat dan menggabungkan leksikon InSet (2 sumber) dan SentiStrength."""
-    st.info("📚 Memuat kamus positif & negatif...")
+    """Memuat leksikon InSet (HANYA fajri91)."""
+    st.info("📚 Memuat kamus positif & negatif (fajri91/InSet)...")
     urls = {
         "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
-        "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
-        "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
-        "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv",
-        "sentiwords_json": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/_json_sentiwords_id.txt"
+        "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv"
     }
-
     pos_lex = set()
     neg_lex = set()
 
@@ -119,31 +95,12 @@ def load_lexicons():
         # Muat fajri91 (header=None, kolom 0)
         pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_pos"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
         neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["fajri_neg"]).text), sep="\t", header=None, usecols=[0], names=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        st.info("   -> OK: Leksikon fajri91 dimuat.")
+        st.success(f"✅ Leksikon dimuat: {len(pos_lex)} kata positif unik, {len(neg_lex)} kata negatif unik.")
     except Exception as e:
-        st.warning(f"⚠️ Gagal memuat leksikon fajri91: {e}")
+        st.error(f"⚠️ Gagal memuat leksikon fajri91: {e}")
+        # Kembalikan set kosong jika gagal total
+        return set(), set()
 
-    try:
-        # Muat onpilot (header=0, kolom 'word')
-        pos_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_pos"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        neg_lex.update(set(pd.read_csv(io.StringIO(requests.get(urls["onpilot_neg"]).text), sep="\t", header=0, usecols=['word'], on_bad_lines='skip', encoding='utf-8')['word'].dropna().astype(str)))
-        st.info("   -> OK: Leksikon onpilot dimuat.")
-    except Exception as e:
-        st.warning(f"⚠️ Gagal memuat leksikon onpilot: {e}")
-
-    # Muat SentiWords JSON
-    try:
-        senti_json = json.loads(requests.get(urls["sentiwords_json"]).text)
-        for k, v in senti_json.items():
-            if int(v) > 0:
-                pos_lex.add(k)
-            elif int(v) < 0:
-                neg_lex.add(k)
-        st.info(f"   -> OK: Leksikon SentiWords JSON dimuat ({len(senti_json)} entri).")
-    except Exception as e:
-        st.warning(f"⚠️ Gagal memuat sentiwords JSON: {e}")
-
-    st.success(f"✅ Leksikon dimuat: {len(pos_lex)} kata positif unik, {len(neg_lex)} kata negatif unik.")
     return pos_lex, neg_lex
 
 # Muat leksikon saat aplikasi dimulai
@@ -179,13 +136,12 @@ def label_sentiment_two_class(text_lower, pos_lex, neg_lex):
 def preprocess_and_label(_df, text_col, _pos_lex, _neg_lex):
     """Menerapkan cleaning, case folding, filter Polri, dan labeling lexicon 2 kelas."""
     st.info("Memulai preprocessing, filter, & pelabelan...")
-    df_processed = _df.copy() # Gunakan _df agar tidak konflik
+    df_processed = _df.copy()
     total_awal = len(df_processed)
     progress_bar = st.progress(0, text="Memulai...")
 
     # Langkah 1: Preprocessing (Clean + Case Fold)
     progress_bar.progress(1/3, text="1/3 Preprocessing (Clean & Case Fold)...")
-    # Terapkan pada kolom teks mentah yang dipilih
     df_processed['cleaned_text'] = df_processed[text_col].astype(str).progress_apply(preprocess_text)
     df_processed.dropna(subset=['cleaned_text'], inplace=True)
     df_processed = df_processed[df_processed['cleaned_text'].str.strip().astype(bool)]
@@ -213,7 +169,6 @@ def preprocess_and_label(_df, text_col, _pos_lex, _neg_lex):
     progress_bar.empty()
 
     st.success("Preprocessing, Filter, & Pelabelan Selesai.")
-    # Kembalikan kolom yang relevan dari df_filtered
     return df_filtered[["cleaned_text", "case_folded_text", "sentiment"]], total_awal, total_filtered, total_label
 
 # =====================================================================
@@ -230,11 +185,9 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
          st.error("Hanya ditemukan 1 kelas sentimen. Tidak dapat melatih model.")
          return None
 
-    # Input fitur adalah teks yg sudah case folding
     X, y = _df_processed["case_folded_text"], _df_processed["sentiment"]
-    labels = sorted(y.unique()) # Dapatkan label unik (harus ['negatif', 'positif'])
+    labels = sorted(y.unique())
 
-    # Split data
     try:
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, stratify=y, random_state=42
@@ -244,7 +197,6 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
         st.error(f"Gagal membagi data (mungkin data terlalu sedikit): {e}")
         return None
 
-    # TF-IDF
     st.write(f"Membuat fitur TF-IDF (max_features={max_features}, ngram=1-2)...")
     vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2), sublinear_tf=True)
     try:
@@ -253,29 +205,26 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
     except Exception as e:
         st.error(f"Gagal saat TF-IDF: {e}"); return None
 
-    results = {"labels": labels} # Simpan label untuk confusion matrix
+    results = {"labels": labels}
 
-    # Naive Bayes
     st.write("Melatih Naive Bayes...")
-    nb = MultinomialNB(alpha=0.3) # Alpha dari kode Anda
+    nb = MultinomialNB(alpha=0.3)
     nb.fit(X_train_tfidf, y_train)
     nb_pred = nb.predict(X_test_tfidf)
     nb_acc = accuracy_score(y_test, nb_pred)
     nb_report = classification_report(y_test, nb_pred, labels=labels, output_dict=True, zero_division=0)
-    results['nb'] = {'acc': nb_acc, 'report': nb_report, 'model': nb, 'preds': nb_pred} # Simpan 'preds'
+    results['nb'] = {'acc': nb_acc, 'report': nb_report, 'model': nb, 'preds': nb_pred}
     st.write(f"Akurasi Naive Bayes: {nb_acc*100:.2f}%")
 
-    # SVM (Linear Kernel)
     st.write("Melatih SVM (Linear)...")
     svm = SVC(kernel="linear", probability=True, random_state=42)
     svm.fit(X_train_tfidf, y_train)
     svm_pred = svm.predict(X_test_tfidf)
     svm_acc = accuracy_score(y_test, svm_pred)
     svm_report = classification_report(y_test, svm_pred, labels=labels, output_dict=True, zero_division=0)
-    results['svm'] = {'acc': svm_acc, 'report': svm_report, 'model': svm, 'preds': svm_pred} # Simpan 'preds'
+    results['svm'] = {'acc': svm_acc, 'report': svm_report, 'model': svm, 'preds': svm_pred}
     st.write(f"Akurasi SVM: {svm_acc*100:.2f}%")
 
-    # Simpan data split dan vectorizer
     results.update({
         "vectorizer": vectorizer, "X_train": X_train, "X_test": X_test,
         "y_train": y_train, "y_test": y_test
@@ -289,13 +238,11 @@ def train_models(_df_processed, max_features=5000, test_size=0.3):
 # =====================================================================
 def show_confusion(y_test, preds, model_name, labels):
     """Menampilkan confusion matrix."""
-    # Pastikan labels sesuai dengan data
     cm_labels = sorted(list(set(y_test) | set(preds)))
-    # Gunakan 'labels' dari 'results' jika tersedia, jika tidak, gunakan 'cm_labels'
     effective_labels = labels if all(l in cm_labels for l in labels) else cm_labels
     
     cm = confusion_matrix(y_test, preds, labels=effective_labels)
-    fig, ax = plt.subplots(figsize=(5, 4)) # Ukuran disesuaikan
+    fig, ax = plt.subplots(figsize=(5, 4))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
                 xticklabels=effective_labels, yticklabels=effective_labels, ax=ax)
     ax.set_title(f"Confusion Matrix - {model_name}")
@@ -309,24 +256,22 @@ def show_wordcloud(_df):
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Positif 😊")
-        # Gunakan 'case_folded_text' untuk word cloud
         text_pos = " ".join(_df[_df["sentiment"] == "positif"]["case_folded_text"].values)
         if text_pos.strip():
             try:
                 wc_pos = WordCloud(width=600, height=300, background_color="white", colormap="Greens").generate(text_pos)
-                st.image(wc_pos.to_array(), use_column_width=True)
+                st.image(wc_pos.to_array(), use_column_width=True) # use_column_width masih umum
             except Exception as e:
                 st.warning(f"Gagal membuat word cloud positif: {e}")
         else:
             st.write("Tidak ada data positif untuk word cloud.")
     with col2:
         st.subheader("Negatif 😠")
-        # Gunakan 'case_folded_text' untuk word cloud
         text_neg = " ".join(_df[_df["sentiment"] == "negatif"]["case_folded_text"].values)
         if text_neg.strip():
             try:
                 wc_neg = WordCloud(width=600, height=300, background_color="white", colormap="Reds").generate(text_neg)
-                st.image(wc_neg.to_array(), use_column_width=True)
+                st.image(wc_neg.to_array(), use_column_width=True) # use_column_width masih umum
             except Exception as e:
                 st.warning(f"Gagal membuat word cloud negatif: {e}")
         else:
@@ -465,24 +410,19 @@ with tab1:
                     colE.metric("Akurasi SVM (Linear)", f"{results['svm']['acc']:.2%}")
 
                     st.subheader("Perbandingan Metrik (Weighted Avg)")
-                    # --- PERBAIKAN KEYERROR ---
                     show_metric_comparison(results["nb"]["report"], results["svm"]["report"])
                     
                     st.subheader("Confusion Matrix")
                     colF, colG = st.columns(2)
                     with colF:
-                        # --- PERBAIKAN KEYERROR ---
                         show_confusion(results["y_test"], results["nb"]["preds"], "Naive Bayes", results["labels"])
                     with colG:
-                        # --- PERBAIKAN KEYERROR ---
                         show_confusion(results["y_test"], results["svm"]["preds"], "SVM (Linear)", results["labels"])
                     
                     st.subheader("Laporan Klasifikasi Detail")
                     with st.expander("Lihat Laporan Naive Bayes"):
-                        # --- PERBAIKAN KEYERROR ---
                         st.dataframe(pd.DataFrame(results['nb']['report']).transpose())
                     with st.expander("Lihat Laporan SVM (Linear)"):
-                        # --- PERBAIKAN KEYERROR ---
                         st.dataframe(pd.DataFrame(results['svm']['report']).transpose())
 
                     # Download button
@@ -511,40 +451,35 @@ with tab1:
         st.info("Silakan unggah file CSV untuk memulai analisis.")
 
 # ==============================================================================
-# 🟩 TAB 2: INPUT TEKS (PERBAIKAN LOGIKA)
+# 🟩 TAB 2: INPUT TEKS (Fungsi 'analyze_single_text' sudah diperbarui)
 # ==============================================================================
 with tab2:
-    st.subheader("💬 Analisis Cepat Teks Tunggal")
-    # Tambahkan info bahwa ini untuk umum
-    st.info("Fitur ini menganalisis sentimen teks apapun menggunakan leksikon yang dimuat.")
-    input_text = st.text_area("Ketik atau paste teks di sini:", height=150)
-    
-    if st.button("🔍 Analisis Teks Ini"):
-        if input_text and input_text.strip():
-            # 1. Preprocess (Cleaning)
-            cleaned = preprocess_text(input_text)
-            
-            # 2. Case Folding (Penting untuk leksikon)
-            cleaned_lower = cleaned.lower()
+    st.header("💬 Analisis Cepat Teks Tunggal")
+    input_text = st.text_area("Ketik atau paste teks di sini:", height=150, key="text_area_single")
 
-            # Cek jika teks kosong SETELAH preprocessing
-            if not cleaned_lower.strip():
-                st.warning("⚠️ Teks menjadi kosong setelah preprocessing.")
-            else:
-                # 3. Filter 'is_relevant_to_polri' DIHAPUS
-                
-                # 4. Langsung lakukan pelabelan pada teks lowercase
-                sentiment = label_sentiment_two_class(cleaned_lower, pos_lex, neg_lex)
-                
-                st.info(f"Teks setelah preprocessing:\n{cleaned}") # Tampilkan teks hasil cleaning
-                
-                st.write("**Hasil Sentimen:**")
-                if sentiment == "positif":
-                    st.success("✅ Sentimen: POSITIF 😊")
-                else: # Otomatis 'negatif' karena fungsi label_sentiment_two_class hanya punya 2 output
-                    st.error("❌ Sentimen: NEGATIF 😠")
+    if st.button("🔍 Analisis Teks Ini", key="button_analyze_single"):
+        if input_text and input_text.strip():
+            with st.spinner("Menganalisis teks..."):
+                # Panggil analyze_single_text (yang sudah ada filter)
+                sentiment, cleaned_display = analyze_single_text(input_text, pos_lex, neg_lex)
+
+            st.subheader("Hasil Analisis:")
+            st.write("**Teks Setelah Preprocessing (Cleaned):**")
+            st.info(f"`{cleaned_display}`") # Tampilkan teks cleaned (bukan lowercase)
+            st.write("**Hasil Sentimen:**")
+
+            if sentiment == "positif":
+                st.success("✅ Sentimen: POSITIF 😊 (Relevan)")
+            elif sentiment == "negatif":
+                st.error("❌ Sentimen: NEGATIF 😠 (Relevan)")
+            elif sentiment == "tidak relevan":
+                 st.warning("⚠️ Sentimen: TIDAK RELEVAN (Tidak terdeteksi keyword Polri atau terdeteksi keyword TNI).")
+            else: # 'tidak valid'
+                 st.warning("⚠️ Teks tidak valid atau menjadi kosong setelah preprocessing.")
+
         else:
-            st.warning("Masukkan teks terlebih dahulu.")
+            st.warning("Masukkan teks terlebih dahulu sebelum menganalisis.")
+
 # --- Footer ---
 st.markdown("---")
 st.markdown("Aplikasi Analisis Sentimen Polri")
