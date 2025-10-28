@@ -1,12 +1,11 @@
 # =====================================================================
 # STREAMLIT: Analisis Sentimen Polri (Lexicon + ML) — FINAL 2 KELAS
-# Leksikon: HANYA InSet (fajri91 + onpilot)
 # =====================================================================
 import streamlit as st
 import pandas as pd
 import requests
 import re
-import json # Diperlukan (meskipun JSON tidak dimuat, impor aman)
+import json
 import io # Diperlukan untuk membaca data dari requests
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -24,8 +23,6 @@ tqdm.pandas()
 # Konfigurasi Halaman (Harus jadi perintah streamlit pertama)
 st.set_page_config(page_title="Analisis Sentimen Polri", layout="wide")
 st.title("📊 Analisis Sentimen Polri (Lexicon + ML) — 2 Kelas")
-st.info("Menggunakan Leksikon InSet (fajri91 + onpilot) untuk pelabelan.")
-
 
 # =====================================================================
 # 1. PREPROCESSING & FILTER
@@ -39,7 +36,7 @@ def preprocess_text(text):
     text = re.sub(r"#", " ", text) # Simpan kata dari hashtag
     text = re.sub(r"[^a-zA-Z\s]", "", text) # Hanya alfabet dan spasi
     text = re.sub(r"\s+", " ", text).strip() # Hapus spasi berlebih
-    # Case folding (lowercase) akan dilakukan nanti di fungsi utama
+    # Case folding (lowercase) akan dilakukan nanti
     return text
 
 def is_relevant_to_polri(text_lower):
@@ -78,18 +75,18 @@ def is_relevant_to_polri(text_lower):
     return bool(re.search(pattern_polri, text_lower)) and not re.search(pattern_exclude, text_lower)
 
 # =====================================================================
-# 2. LOAD LEXICON POSITIF & NEGATIF (HANYA InSet fajri91 + onpilot)
+# 2. LOAD LEXICON POSITIF & NEGATIF (GABUNGAN)
 # =====================================================================
 @st.cache_resource
 def load_lexicons():
-    """Memuat dan menggabungkan leksikon InSet (fajri91 + onpilot)."""
-    st.info("📚 Memuat kamus positif & negatif (fajri91/InSet + onpilot/InSet)...")
+    """Memuat dan menggabungkan leksikon InSet (2 sumber) dan SentiStrength."""
+    st.info("📚 Memuat kamus positif & negatif...")
     urls = {
         "fajri_pos": "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv",
         "fajri_neg": "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv",
         "onpilot_pos": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/positive.tsv",
         "onpilot_neg": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/inset/negative.tsv",
-        # URL SentiStrength JSON dihapus
+        "sentiwords_json": "https://raw.githubusercontent.com/onpilot/sentimen-bahasa/master/leksikon/sentistrength_id/_json_sentiwords_id.txt"
     }
 
     pos_lex = set()
@@ -111,8 +108,18 @@ def load_lexicons():
     except Exception as e:
         st.warning(f"⚠️ Gagal memuat leksikon onpilot: {e}")
 
-    # --- SentiWords JSON Dihapus ---
-    
+    # Muat SentiWords JSON
+    try:
+        senti_json = json.loads(requests.get(urls["sentiwords_json"]).text)
+        for k, v in senti_json.items():
+            if int(v) > 0:
+                pos_lex.add(k)
+            elif int(v) < 0:
+                neg_lex.add(k)
+        st.info(f"   -> OK: Leksikon SentiWords JSON dimuat ({len(senti_json)} entri).")
+    except Exception as e:
+        st.warning(f"⚠️ Gagal memuat sentiwords JSON: {e}")
+
     st.success(f"✅ Leksikon dimuat: {len(pos_lex)} kata positif unik, {len(neg_lex)} kata negatif unik.")
     return pos_lex, neg_lex
 
@@ -134,8 +141,8 @@ def label_sentiment_two_class(text_lower, pos_lex, neg_lex):
     pos = sum(1 for t in tokens if t in pos_lex)
     neg = sum(1 for t in tokens if t in neg_lex)
 
-    # --- PERBAIKAN LOGIKA: pos >= neg (sesuai kode yang Anda berikan) ---
-    if pos >= neg:
+    # Logika 2 Kelas: Jika positif > negatif -> positif, selain itu negatif
+    if pos > neg:
         return "positif"
     else:
         return "negatif"
@@ -307,7 +314,7 @@ def show_metric_comparison(nb_report, svm_report):
 def analyze_single_text(text, positive_lexicon, negative_lexicon):
     """
     Analisis cepat untuk input teks tunggal.
-    Menerapkan: clean -> lower -> filter -> label
+    Menerapkan: clean -> lower -> (TANPA FILTER) -> label
     """
     if not text or not text.strip():
         return "tidak valid", "" # Kasus input kosong
@@ -316,13 +323,13 @@ def analyze_single_text(text, positive_lexicon, negative_lexicon):
     if not text_clean:
          return "tidak valid", "" # Kasus kosong setelah cleaning
 
-    text_lower = text_clean.lower() # Case folding untuk filter dan labeling
+    text_lower = text_clean.lower() # Case folding untuk labeling
 
-    # Terapkan filter
-    if not is_relevant_to_polri(text_lower):
-        return "tidak relevan", text_clean # Kembalikan teks cleaned asli
+    # --- Filter Polri DIHAPUS ---
+    # if not is_relevant_to_polri(text_lower):
+    #     return "tidak relevan", text_clean 
 
-    # Jika relevan, lanjutkan pelabelan
+    # Langsung lakukan pelabelan
     sentiment = label_sentiment_two_class(text_lower, positive_lexicon, negative_lexicon)
     return sentiment, text_clean # Kembalikan teks cleaned asli
 
@@ -334,10 +341,11 @@ if 'processed_df' not in st.session_state: st.session_state.processed_df = None
 if 'ml_results' not in st.session_state: st.session_state.ml_results = None
 if 'current_filename' not in st.session_state: st.session_state.current_filename = ""
 
-tab1, tab2 = st.tabs(["📂 Analisis File CSV", "⌨️ Analisis Cepat Teks Tunggal"])
+tab1, tab2 = st.tabs(["📂 Analisis File CSV (Filter Polri)", "⌨️ Analisis Teks Umum"]) # Judul Tab 2 diubah
 
 with tab1:
-    st.header("Analisis Sentimen dari File CSV")
+    st.header("Analisis Sentimen dari File CSV (Filter Polri)")
+    st.info("Tab ini akan memfilter data dan hanya menganalisis teks yang relevan dengan Polri.")
     uploaded = st.file_uploader("Unggah Dataset CSV", type=["csv"], label_visibility="collapsed")
     
     # Reset state jika file baru
@@ -361,7 +369,7 @@ with tab1:
             col_index = 0
             if 'selectbox_column' in st.session_state and st.session_state.selectbox_column in available_columns:
                 col_index = available_columns.index(st.session_state.selectbox_column)
-            text_col = st.selectbox("Pilih Kolom Teks:", available_columns, index=col_index, key="selectbox_column")
+            text_col = st.selectbox("Pilih Kolom Teks:", available_columns, index=col_index, key="selectbox_column_tab1") # Key unik
 
             if text_col:
                 st.info(f"Kolom teks yang dipilih: **{text_col}**")
@@ -399,14 +407,36 @@ with tab1:
                         
                         col_ml1, col_ml2 = st.columns(2)
                         with col_ml1:
-                            test_size = st.slider("Pilih Test Size (Data Uji)", 0.1, 0.5, 0.3, step=0.05, format="%.0f%%", key="slider_test")
+                            # --- PERBAIKAN: Slider Test Size ---
+                            test_size_percent = st.slider(
+                                "Pilih Test Size (Data Uji)", 
+                                10, 50, 30, step=5, 
+                                format="%d%%", 
+                                key="slider_test_tab1" # Key unik
+                            )
+                            test_size = test_size_percent / 100.0 
+
                         with col_ml2:
-                            max_feat = st.slider("Max Features TF-IDF", 1000, 10000, 5000, step=100, key="slider_maxfeat")
+                            # --- PERBAIKAN: Input Max Features ---
+                            max_feat_input = st.number_input(
+                                "Max Features TF-IDF (0 = Semua)", 
+                                min_value=0, 
+                                max_value=100000, 
+                                value=5000, 
+                                step=100, 
+                                key="numinput_maxfeat_tab1", # Key unik
+                                help="Masukkan jumlah fitur/kata. Masukkan 0 untuk menggunakan semua fitur."
+                            )
+                            max_feat = None if max_feat_input == 0 else int(max_feat_input)
+                        
+                        display_max_feat = "Semua" if max_feat is None else max_feat
+                        st.info(f"Data uji: {test_size:.0%}. Data Latih: {1-test_size:.0%}. Max Features: {display_max_feat}")
+
 
                         if st.button("🤖 Latih Model NB & SVM", key="btn_train"):
                             st.session_state.ml_results = None # Reset
                             with st.spinner("🔢 Melatih model ML..."):
-                                results = train_models(st.session_state.processed_df, max_feat, test_size)
+                                results = train_models(st.session_state.processed_df, max_feat, test_size) 
                                 st.session_state.ml_results = results # Simpan hasil
 
                     else:
@@ -464,29 +494,38 @@ with tab1:
         st.info("Silakan unggah file CSV untuk memulai analisis.")
 
 # ==============================================================================
-# 🟩 TAB 2: INPUT TEKS (Fungsi 'analyze_single_text' sudah diperbarui)
+# 🟩 TAB 2: INPUT TEKS (TANPA FILTER POLRI)
 # ==============================================================================
 with tab2:
-    st.header("💬 Analisis Cepat Teks Tunggal")
+    st.header("💬 Analisis Cepat Teks Tunggal (Umum)")
+    st.info("Fitur ini menganalisis sentimen teks apapun (tanpa filter Polri) menggunakan leksikon.")
     input_text = st.text_area("Ketik atau paste teks di sini:", height=150, key="text_area_single")
 
     if st.button("🔍 Analisis Teks Ini", key="button_analyze_single"):
         if input_text and input_text.strip():
             with st.spinner("Menganalisis teks..."):
-                # Panggil analyze_single_text (yang sudah ada filter)
-                sentiment, cleaned_display = analyze_single_text(input_text, pos_lex, neg_lex)
-
+                # Panggil analyze_single_text, tapi gunakan versi yang dimodifikasi
+                # 1. Clean
+                cleaned_display = preprocess_text(input_text)
+                sentiment = "tidak valid" # Default
+                
+                if cleaned_display:
+                    # 2. Lower
+                    cleaned_lower = cleaned_display.lower()
+                    # 3. Label (Tanpa Filter)
+                    sentiment = label_sentiment_two_class(cleaned_lower, pos_lex, neg_lex)
+                else:
+                    sentiment = "tidak valid"
+                    
             st.subheader("Hasil Analisis:")
             st.write("**Teks Setelah Preprocessing (Cleaned):**")
             st.info(f"`{cleaned_display}`") # Tampilkan teks cleaned (bukan lowercase)
             st.write("**Hasil Sentimen:**")
 
             if sentiment == "positif":
-                st.success("✅ Sentimen: POSITIF 😊 (Relevan)")
+                st.success("✅ Sentimen: POSITIF 😊")
             elif sentiment == "negatif":
-                st.error("❌ Sentimen: NEGATIF 😠 (Relevan)")
-            elif sentiment == "tidak relevan":
-                 st.warning("⚠️ Sentimen: TIDAK RELEVAN (Tidak terdeteksi keyword Polri atau terdeteksi keyword TNI).")
+                st.error("❌ Sentimen: NEGATIF 😠")
             else: # 'tidak valid'
                  st.warning("⚠️ Teks tidak valid atau menjadi kosong setelah preprocessing.")
 
@@ -495,4 +534,4 @@ with tab2:
 
 # --- Footer ---
 st.markdown("---")
-st.markdown("Aplikasi Analisis Sentimen Polri")
+st.markdown("Aplikasi Analisis Sentimen") # Judul footer diubah
