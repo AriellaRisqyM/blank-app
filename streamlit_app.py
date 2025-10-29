@@ -41,7 +41,7 @@ st.title("📊 Analisis Sentimen Polri (Logika IPYNB)")
 def load_nltk_punkt():
     """Memastikan NLTK Punkt diunduh."""
     try:
-        # Kita cek 'punkt_tab' secara spesifik
+        # Ini sudah benar, sesuai dengan kebutuhan IPYNB Anda
         nltk.data.find('tokenizers/punkt_tab') 
     except LookupError:
         st.info("Mengunduh NLTK 'punkt_tab' tokenizer...")
